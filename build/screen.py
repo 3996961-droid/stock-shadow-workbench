@@ -9,7 +9,7 @@
     python3 build/screen.py            # 自动取最近一个交易日
     python3 build/screen.py 2026-11-05 # 指定日期（回补用）
 """
-import json, os, sys, time, urllib.request
+import json, os, sys, time, glob, urllib.request
 from datetime import datetime, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor
 
@@ -36,34 +36,50 @@ LIST_URL = ("https://push2.eastmoney.com/api/qt/clist/get?po=0&np=1&fltt=2&invt=
             "&fields=f12,f13,f14,f2,f3,f6,f8,f15,f16,f17,f18,f20,f21&pn=%d&pz=100")
 
 
-def get(url, retry=3):
+def get(url, retry=4, quiet=False):
+    last = None
     for i in range(retry):
         try:
             req = urllib.request.Request(url, headers=HEADERS)
-            with urllib.request.urlopen(req, timeout=20) as r:
+            with urllib.request.urlopen(req, timeout=25) as r:
                 return json.loads(r.read().decode("utf-8", "ignore"))
-        except Exception:
-            if i == retry - 1:
-                return {}
-            time.sleep(0.5 * (i + 1))
+        except Exception as e:
+            last = e
+            if i < retry - 1:
+                time.sleep(0.8 * (i + 1))
+    if not quiet:
+        print("   !! 请求失败：%s …（%s）" % (url[:80], type(last).__name__))
     return {}
 
 
 def all_quotes():
-    """分页取全市场快照，返回 [dict]（只保留主板、非 ST）。"""
-    out, page, total = [], 1, None
-    while True:
+    """分页取全市场快照，返回 (列表, 接口报告的总数)。
+
+    单页失败不再静默退出：跳过并继续下一页，连续多页拿不到才放弃；
+    真正是否可用由调用方的完整性校验决定。
+    """
+    out, page, total, miss = [], 1, None, 0
+    while page <= 100:
         d = (get(LIST_URL % page).get("data") or {})
         diff = d.get("diff") or []
         if total is None:
             total = d.get("total") or 0
         if not diff:
-            break
+            miss += 1
+            if miss >= 4:
+                print("   !! 连续 %d 页取不到数据，停止分页" % miss)
+                break
+            page += 1
+            time.sleep(1.2)
+            continue
+        miss = 0
         out.extend(diff)
         page += 1
-        if len(out) >= total or page > 80:
+        if total and len(out) >= total:
             break
-    return out
+        time.sleep(0.12)                       # 页间留点间隔，降低被限流概率
+    print("   分页完成：%d 页 · %d 只（接口报告 total=%s）" % (page - 1, len(out), total))
+    return out, total
 
 
 def pick_candidates(quotes):
@@ -111,7 +127,7 @@ def fetch_detail(r):
          "&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57"
          "&klt=101&fqt=0&beg=0&end=20500101&lmt=120" % sid)
     bars = []
-    for line in ((get(u).get("data") or {}).get("klines") or []):
+    for line in ((get(u, quiet=True).get("data") or {}).get("klines") or []):
         p = line.split(",")
         try:
             bars.append([p[0], float(p[1]), float(p[3]), float(p[4]), float(p[2]),
@@ -122,7 +138,7 @@ def fetch_detail(r):
     u2 = ("https://push2his.eastmoney.com/api/qt/stock/trends2/get?secid=%s"
           "&fields1=f1,f2,f3,f4,f5,f6,f7,f8&fields2=f51,f52,f53,f54,f55,f56,f57,f58"
           "&iscr=0&ndays=1" % sid)
-    td = (get(u2).get("data") or {})
+    td = (get(u2, quiet=True).get("data") or {})
     trend = []
     for line in (td.get("trends") or []):
         p = line.split(",")
@@ -193,7 +209,18 @@ HEAVY = {"daily", "trend", "limit", "secid", "preClose"}
 def main():
     rng = sys.argv[1] if len(sys.argv) > 1 else "latest"
     print("拉取全市场快照 ...")
-    quotes = all_quotes()
+    quotes, total = all_quotes()
+
+    # 完整性闸门：接口限流时会只返回第一页，必须拦住，绝不能用残数据覆盖历史
+    if total and total < 3000:
+        print("!! 接口报告的全市场总数异常（total=%d，A股全市场通常 5000+），"
+              "多为限流或降级返回，已中止，未写入任何数据" % total)
+        sys.exit(3)
+    if total and len(quotes) < total * 0.95:
+        print("!! 快照不完整：只取到 %d/%d 只（%.1f%%），已中止，未写入任何数据"
+              % (len(quotes), total, len(quotes) / total * 100))
+        sys.exit(3)
+
     cand = pick_candidates(quotes)
     print("全市场 %d 只 · 形态初筛（阳线 + 上影>=2倍实体 + 主板非ST）%d 只" % (len(quotes), len(cand)))
 
@@ -232,6 +259,22 @@ def main():
         sys.exit(2)
 
     res.sort(key=lambda x: -x["shadow"])
+
+    # 数量骤降保护：与上一份快照对比，异常下跌说明抓取或接口出了问题
+    prev = [f for f in sorted(glob.glob(SNAP_DIR + "/*.json"))
+            if os.path.basename(f)[:-5] != day]
+    if prev:
+        pfp = prev[-1]
+        pday = os.path.basename(pfp)[:-5]
+        try:
+            pn = len(json.load(open(pfp, encoding="utf-8")))
+        except Exception:
+            pn = 0
+        if pn and len(res) < pn * 0.3:
+            print("!! %s 只筛出 %d 只，而上一交易日 %s 有 %d 只，降幅异常，"
+                  "已中止，未写入任何数据" % (day, len(res), pday, pn))
+            sys.exit(4)
+
     os.makedirs(SNAP_DIR, exist_ok=True)
 
     # 轻量快照（供收益跟踪累计）
