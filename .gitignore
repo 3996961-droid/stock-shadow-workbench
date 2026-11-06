@@ -1,0 +1,23 @@
+# 构建产物：每次运行自动生成并直接部署，不进版本库
+index.html
+长上影选股工作台.html
+history/
+历史/
+_site/
+
+# 中间数据（可由 build/full 最新一日重建）
+build/data.json
+build/px_cache.json
+
+# 本地备份与归档
+build/*.bak*
+build/archive/
+
+# 导出的 CSV
+选股明细_*.csv
+
+# 系统与本地环境
+.DS_Store
+.workbuddy/
+__pycache__/
+*.pyc
