@@ -2,8 +2,9 @@ name: 每日自动更新
 
 on:
   schedule:
-    # GitHub 定时器按 UTC 计。07:40 UTC = 北京时间 15:40，收盘后
-    - cron: '40 7 * * 1-5'
+    # GitHub 定时器按 UTC 计
+    - cron: '40 7 * * 1-5'    # 15:40 北京时间，收盘后出首版
+    - cron: '40 11 * * 1-5'   # 19:40 北京时间，新闻联播播完后补跑催化
   # 支持在 Actions 页面手动点运行（补跑、验证用）
   workflow_dispatch:
 
@@ -28,29 +29,51 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 1/5 全市场筛选（抓东财行情）
+      # 19:40 那次只补催化与题材：行情在收盘时已经定版，没必要重抓全市场
+      - name: 1/8 全市场筛选（抓东财行情）
+        if: github.event.schedule != '40 11 * * 1-5'
         run: python3 build/screen.py
 
+      # 催化源清洗：新闻联播 + 韭研公社。缺 JY_API_KEY 时自动跳过韭研，不阻断流程
+      - name: 2/8 催化源清洗（新闻联播 + 韭研公社）
+        continue-on-error: true
+        env:
+          JY_API_KEY: ${{ secrets.JY_API_KEY }}
+        run: python3 build/catalyst.py
+
       # 题材雷达是独立模块：即使资讯接口在海外受限，也不能拖垮当天的选股与部署
-      - name: 2/5 题材雷达（低位新题材 + 资讯热度 + 财务排雷）
+      - name: 3/8 题材雷达（低位轮动新题材 + 资讯热度 + 财务排雷）
         continue-on-error: true
         run: python3 build/theme_scan.py
 
-      - name: 3/5 收益跟踪 T+1~T+10
+      # 低位异动依赖催化源（韭研点名、新闻联播、政策池），所以排在上一步之后；
+      # 它自己抓涨幅榜与 K 线，19:40 那次不重跑行情也能独立出结果
+      - name: 4/8 低位异动（低位放量 + 消息归因 + 持续性）
+        continue-on-error: true
+        run: python3 build/anomaly.py
+
+      # 异动名单的 T+1~T+5 台账：只请求名单里的票，几十个 K 线请求，19:40 补跑也不心疼
+      - name: 5/8 异动收益跟踪 T+1~T+5
+        continue-on-error: true
+        run: python3 build/anom_track.py
+
+      - name: 6/8 收益跟踪 T+1~T+10
+        if: github.event.schedule != '40 11 * * 1-5'
         run: python3 build/track.py
 
-      - name: 4/5 导出 CSV
+      - name: 7/8 导出 CSV
+        if: github.event.schedule != '40 11 * * 1-5'
         continue-on-error: true
         run: python3 build/gen_csv.py
 
-      - name: 5/5 生成工作台页面
+      - name: 8/8 生成工作台页面
         run: python3 build/build.py
 
       - name: 提交每日数据
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A build/full build/snap build/theme build/track.json
+          git add -A build/full build/snap build/theme build/catalyst build/anomaly build/anomtrack.json build/track.json
           if git diff --staged --quiet; then
             echo "数据无变化，跳过提交"
           else

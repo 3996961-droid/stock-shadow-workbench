@@ -24,6 +24,7 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FULL_DIR = BASE + "/build/full"
 SNAP_DIR = BASE + "/build/snap"
 THEME_DIR = BASE + "/build/theme"
+ANOM_DIR = BASE + "/build/anomaly"
 HIST_OUT = BASE + "/history"
 MAIN_OUT = BASE + "/index.html"          # 站点入口，Pages 与本地双击都用它
 
@@ -93,6 +94,30 @@ if theme:
              theme.get("counts", {}).get("watch", 0)))
 
 
+# 低位异动：同样取最新一份
+anom_days = sorted(os.path.basename(f)[:-5] for f in glob.glob(ANOM_DIR + "/*.json"))
+anom = {}
+for day in anom_days:
+    try:
+        anom = json.load(io.open("%s/%s.json" % (ANOM_DIR, day), encoding="utf-8"))
+    except Exception as e:
+        print("!! 跳过异动数据", day, e)
+if anom:
+    print("低位异动：%s · %d 只"
+          % (anom.get("date"), len(anom.get("items") or [])))
+
+# 异动名单的 T+1~T+5 收益台账（跨批次，由 anom_track.py 生成）
+atrack_path = BASE + "/build/anomtrack.json"
+atrack = (json.load(io.open(atrack_path, encoding="utf-8"))
+          if os.path.exists(atrack_path)
+          else {"maxDays": 5, "updated": "", "cohorts": []})
+if atrack.get("cohorts"):
+    a0 = atrack["cohorts"][0]
+    print("异动收益跟踪：%d 个批次 · 最新 %s T+%d/%d · %d 只"
+          % (len(atrack["cohorts"]), a0.get("date"), a0.get("days") or 0,
+             atrack.get("maxDays") or 5, len(a0.get("items") or [])))
+
+
 def dumps(o):
     return json.dumps(o, ensure_ascii=False, separators=(",", ":"))
 
@@ -154,6 +179,8 @@ def build_page(day, inline_days, out_path):
               .replace("__ALL_JSON__", dumps(allmap))
               .replace("__HIST_JSON__", dumps(others))
               .replace("__THEME_JSON__", dumps(theme))
+              .replace("__ANOM_JSON__", dumps(anom))
+              .replace("__ANOMTRACK_JSON__", dumps(atrack))
               .replace("__TRACK_JSON__", dumps(track))
               .replace("__META_JSON__", json.dumps(meta, ensure_ascii=False))
               .replace("__META_DATE__", day))

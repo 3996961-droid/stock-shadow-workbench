@@ -144,6 +144,19 @@ select{
 #tabNote{margin-left:auto;font-size:10.5px;color:var(--dim);font-variant-numeric:tabular-nums}
 .pane{display:flex;flex-direction:column;gap:10px;min-height:0;flex:1}
 
+/* 个股详情：整页纵向滚动，图表只保底不限高，不再被「异动原因」挤压 */
+#paneStock{
+  overflow-y:auto; overflow-x:hidden; padding-right:2px;
+  scrollbar-width:thin; overscroll-behavior:contain;
+}
+#paneStock>*{flex:0 0 auto}
+#paneStock::-webkit-scrollbar{width:8px}
+#paneStock::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+#paneStock::-webkit-scrollbar-track{background:transparent}
+/* 空间够就撑满，空间不够就守住这个高度，让页面滚动而不是把图压扁 */
+#paneStock .trend-card{flex:1.05 1 292px; min-height:292px; max-height:470px}
+#paneStock .kline-card{flex:1.35 1 402px; min-height:402px; max-height:660px}
+
 /* ---------- 收益跟踪 ---------- */
 .tkCohorts{display:flex;gap:6px;overflow-x:auto;padding:0 0 2px;flex-shrink:0;
   scrollbar-width:thin}
@@ -340,6 +353,8 @@ select{
   .sidebar{max-height:46vh}
   .detail{min-height:760px}
   .chart-card{min-height:300px}
+  /* 窄屏交给整页滚动，不再套一层内部滚动 */
+  #paneStock{overflow:visible}
 }
 /* ---------- 访问口令 ---------- */
 #gate{
@@ -419,13 +434,182 @@ select{
 .th-risk{font-size:9px; padding:0 4px; border-radius:4px; background:rgba(232,179,57,.16); color:var(--gold); white-space:nowrap}
 .th-ok{font-size:9px; color:var(--down)}
 .th-none{padding:22px; text-align:center; color:var(--dim); font-size:12px; line-height:1.7}
+/* 催化源面板 */
+#thCatBox{flex:0 0 auto}          /* pane 是 flex column，不加这句会被压缩到内容重叠 */
+.thCatBody{padding:2px 12px 10px; display:grid; grid-template-columns:1fr 1fr; gap:10px}
+@media (max-width:980px){.thCatBody{grid-template-columns:1fr}}
+.thCatCol{background:var(--panel2); border-radius:8px; padding:8px 10px; min-width:0}
+.thCatCol h4{margin:0 0 5px; font-size:11px; color:var(--muted); font-weight:600; display:flex; gap:6px; align-items:center}
+.thCatCol h4 i{font-style:normal; font-size:9.5px; padding:0 5px; border-radius:4px;
+  background:var(--panel3); color:var(--dim)}
+.thCatCol .ok{color:var(--down)}
+.thCatCol .no{color:var(--dim)}
+.thCatItem{font-size:10.5px; color:var(--muted); line-height:1.5; padding:3px 0;
+  border-top:1px dashed var(--border); display:flex; gap:6px}
+.thCatItem:first-of-type{border-top:0}
+.thCatItem .sc{flex:0 0 auto; color:var(--gold); font-variant-numeric:tabular-nums}
+.thCatItem .tx{overflow:hidden; text-overflow:ellipsis}
+.thCatItem .tx b{color:var(--text); font-weight:500}
+.thCatEmpty{font-size:10.5px; color:var(--dim); line-height:1.6}
+/* 卡片内催化证据 */
+.th-cat{border-top:1px dashed var(--border); padding-top:5px; display:flex; flex-direction:column; gap:2px}
+.th-cat-h{font-size:9.5px; color:var(--dim); display:flex; gap:6px; align-items:center}
+.th-cat-h em{font-style:normal; color:var(--gold)}
+.th-cat-e{font-size:10.5px; color:var(--muted); line-height:1.45; display:flex; gap:5px}
+.th-cat-e .src{flex:0 0 auto; font-size:9px; padding:0 4px; border-radius:3px; height:15px; line-height:15px}
+.th-cat-e .src.x{background:rgba(240,74,91,.14); color:var(--up)}
+.th-cat-e .src.j{background:rgba(77,141,255,.14); color:var(--accent)}
+.th-named{font-size:9px; padding:0 4px; border-radius:4px; background:rgba(77,141,255,.14);
+  color:var(--accent); white-space:nowrap; font-style:normal}
 .thTable{overflow:auto; flex:1; padding:0 12px 8px}
-.thRow{display:grid; grid-template-columns:1.6fr .55fr .6fr .6fr .5fr .55fr 1.1fr;
-  gap:8px; padding:6px 0; border-bottom:1px solid var(--border); font-size:11.5px; align-items:center}
+.thRow{display:grid; grid-template-columns:1.4fr .45fr .5fr .5fr .4fr 1fr .85fr;
+  gap:6px; padding:6px 0; border-bottom:1px solid var(--border); font-size:11.5px; align-items:center}
 .thRow.hd{color:var(--dim); font-size:9.5px; position:sticky; top:0; background:var(--panel); z-index:2; border-bottom-color:var(--border2)}
 .thRow .nm{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .thRow .num{text-align:right; font-variant-numeric:tabular-nums}
 .thRow:hover{background:var(--panel2)}
+
+/* ---------------- 低位异动 ---------------- */
+/* 详情页整列可滚动；清单不再自己滚一层，改成整页往下看清单 + 收益跟踪 */
+#paneAnom{display:flex; flex-direction:column; gap:9px; min-height:0;
+  overflow-y:auto; overflow-x:hidden; padding-right:2px;
+  scrollbar-width:thin; overscroll-behavior:contain}
+#paneAnom > .card,#paneAnom > .cbar,#paneAnom > .tkNote{flex:0 0 auto}
+#paneAnom::-webkit-scrollbar{width:8px}
+#paneAnom::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+#paneAnom::-webkit-scrollbar-track{background:transparent}
+#paneAnom .anList{flex:0 0 auto; overflow:visible}
+.anList{display:flex; flex-direction:column; gap:0; padding:0 2px 4px 1px;
+  flex:0 1 auto; min-height:0; overflow-y:auto; overflow-x:hidden; scrollbar-width:thin}
+.anTg{font-size:9.5px; padding:1px 6px; border-radius:5px; background:var(--panel3);
+  color:var(--dim); border:1px solid var(--border); white-space:nowrap}
+.anTg.hot{background:rgba(240,74,91,.14); color:var(--up); border-color:rgba(240,74,91,.3)}
+.anTg.gov{background:rgba(240,74,91,.18); color:var(--up); border-color:rgba(240,74,91,.4); font-weight:600}
+.anTg.prov{background:rgba(232,179,57,.16); color:var(--gold); border-color:rgba(232,179,57,.35)}
+.anTg.ovs{background:rgba(77,141,255,.14); color:var(--accent); border-color:rgba(77,141,255,.3)}
+.anTg.warn{background:rgba(232,179,57,.12); color:var(--gold)}
+.anTg.named{background:rgba(77,141,255,.14); color:var(--accent)}
+/* 资金抢跑：缩量上涨 + 主力净流入 + 消息空白，是本模块最想抓到的那一类 */
+.anTg.sneak{background:rgba(240,74,91,.2); color:var(--up); border-color:rgba(240,74,91,.45); font-weight:600}
+.anTg.sneak2{background:rgba(232,179,57,.18); color:var(--gold); border-color:rgba(232,179,57,.4)}
+.anTg.quiet{background:var(--panel3); color:var(--muted)}
+.anTg.inflow{background:rgba(77,141,255,.14); color:var(--accent)}
+.anEv{font-size:10.5px; color:var(--muted); line-height:1.45; display:flex; gap:5px; align-items:flex-start}
+.anEv .s{flex:0 0 auto; font-size:9px; padding:0 4px; border-radius:3px; height:15px; line-height:15px; white-space:nowrap}
+.anEv .s.own{background:rgba(240,74,91,.14); color:var(--up)}
+.anEv .s.sec{background:rgba(77,141,255,.13); color:var(--accent)}
+.anEv .s.gov{background:rgba(232,179,57,.16); color:var(--gold)}
+.anEv .s.jy{background:rgba(140,110,230,.16); color:#a48bff}
+.anEv .tx{flex:1 1 auto; min-width:0; overflow-wrap:anywhere}
+.anEv .tx i{font-style:normal; color:var(--dim); font-size:9.5px; margin-left:4px}
+.anDur{background:var(--panel2); border-radius:8px; padding:7px 9px;
+  display:flex; flex-direction:column; gap:4px; min-width:0}
+.anDur .dh{font-size:9.5px; color:var(--dim)}
+.anDur .dv{font-size:19px; font-weight:600; font-variant-numeric:tabular-nums; line-height:1.15}
+.anDur .dv em{font-style:normal; font-size:11px; color:var(--dim); font-weight:400; margin-left:3px}
+.anBar{height:4px; border-radius:2px; background:var(--panel3); overflow:hidden}
+.anBar i{display:block; height:100%; border-radius:2px; background:var(--up)}
+.anBar.mid i{background:var(--gold)}
+.anBar.low i{background:var(--muted)}
+.anNext{font-size:10px; color:var(--muted); line-height:1.45}
+.anNext b{color:var(--gold); font-weight:500}
+.anPolBody{padding:3px 12px 10px; display:flex; flex-direction:column; gap:3px}
+.anPolItem{font-size:10.5px; color:var(--muted); line-height:1.5; display:flex; gap:6px;
+  padding:3px 0; border-top:1px dashed var(--border)}
+.anPolItem:first-child{border-top:0}
+.anPolItem .lv{flex:0 0 auto; font-size:9px; padding:0 5px; border-radius:4px; height:15px;
+  line-height:15px; background:rgba(240,74,91,.16); color:var(--up)}
+/* 清单用表格行：一屏能扫完当天全部异动，细节（证据、持续性）压到个股页去 */
+.anHead,.anRow{display:grid; gap:8px; align-items:center; padding:0 9px;
+  grid-template-columns:108px 54px 158px 52px 88px 82px 44px 66px minmax(0,1fr)}
+.anHead{height:25px; flex:0 0 auto; font-size:9.5px; color:var(--dim); letter-spacing:.2px;
+  border-bottom:1px solid var(--border); position:sticky; top:0; z-index:2;
+  background:var(--panel); margin-bottom:1px}
+.anHead span.n{text-align:right}
+.anRow{height:33px; flex:0 0 auto; font-size:11px; color:var(--muted); border-bottom:1px solid rgba(128,128,128,.10);
+  cursor:pointer; border-radius:4px; transition:background .12s}
+.anRow:hover{background:var(--panel2)}
+.anRow.s-强{box-shadow:inset 2px 0 0 var(--up)}
+.anRow.s-中{box-shadow:inset 2px 0 0 var(--gold)}
+.anRow .nm{font-size:12.5px; font-weight:600; color:var(--text); white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis}
+.anRow .nm i{font-style:normal; font-size:9.5px; font-weight:400; color:var(--dim); margin-left:4px}
+.anRow .cg{font-size:12.5px; font-weight:600; font-variant-numeric:tabular-nums; text-align:right}
+.anRow .tg{display:flex; gap:3px; overflow:hidden; white-space:nowrap}
+.anRow .anTg{font-size:9px; padding:0 4px; border-radius:3px; line-height:14px; height:14px}
+.anRow .num{text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap}
+.anRow .num i{font-style:normal; font-size:9.5px; color:var(--dim)}
+.anRow .num i.quiet{color:var(--gold)}
+.anRow .dv{text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums}
+.anRow .dv b{font-weight:600}
+.anRow .dv b.hot{color:var(--up)}
+.anRow .rs{color:var(--dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.anRow .rs.empty{font-style:italic}
+@media (max-width:1240px){
+  .anHead,.anRow{grid-template-columns:96px 50px 132px 48px 80px 74px 40px 60px minmax(0,1fr); gap:6px}
+  .anRow .rs,.anHead .rs{display:none}
+}
+
+/* T+1~T+5 收益跟踪：清单正下方的收益台账，一行一只，信号日收盘价为成本 */
+.anTrkBody{padding:0 4px 8px; display:flex; flex-direction:column; gap:2px}
+.anTrkGrp{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;
+  padding:8px 5px 5px; font-size:10px; color:var(--dim); border-bottom:1px solid var(--border2)}
+.anTrkGrp b{font-size:11.5px; color:var(--text); font-weight:600}
+.anTrkGrp .av{color:var(--muted); font-variant-numeric:tabular-nums}
+.anTrkGrp .av i{font-style:normal; color:var(--dim); margin-right:3px}
+.anTrkGrp .av b{font-weight:600; color:var(--muted)}
+.anTrkGrp .av b.up{color:var(--up)}
+.anTrkGrp .av b.down{color:var(--down)}
+.anTrkGrp .sp{margin-left:auto; font-variant-numeric:tabular-nums}
+.anTrkHd,.anTrkRow{display:grid; gap:6px; align-items:center; padding:0 5px;
+  grid-template-columns:128px 92px 58px repeat(5,58px) 96px}
+.anTrkHd{height:22px; font-size:9.5px; color:var(--dim); letter-spacing:.2px;
+  border-bottom:1px solid var(--border); position:sticky; top:0; z-index:2; background:var(--panel)}
+.anTrkHd span.n{text-align:right}
+.anTrkRow{height:30px; font-size:11px; font-variant-numeric:tabular-nums;
+  border-bottom:1px solid rgba(128,128,128,.09); border-radius:4px; cursor:pointer}
+.anTrkRow:hover{background:var(--panel2)}
+.anTrkRow .who2{display:flex; align-items:baseline; gap:5px; overflow:hidden}
+.anTrkRow .nm{font-size:11.5px; font-weight:600; color:var(--text); white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis}
+.anTrkRow .cd{font-size:9.5px; color:var(--dim); flex:none}
+.anTrkRow .bd{font-size:10px; color:var(--dim); overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap}
+.anTrkRow .num{text-align:right; color:var(--muted)}
+.anTrkRow .cell{text-align:right; font-weight:600; color:var(--muted)}
+.anTrkRow .cell.up{color:var(--up)}
+.anTrkRow .cell.down{color:var(--down)}
+.anTrkRow .cell.flat{color:var(--flat)}
+.anTrkRow .cell.void{color:var(--dim); font-weight:400; opacity:.6}
+.anTrkRow .hl{text-align:right; font-size:10px; color:var(--dim)}
+.anTrkTip{padding:10px 6px 4px; font-size:11px; color:var(--muted); line-height:1.7}
+.anTrkTip b{color:var(--text)}
+@media (max-width:1240px){
+  .anTrkHd,.anTrkRow{grid-template-columns:112px 52px repeat(5,52px) 84px; gap:4px}
+  .anTrkRow .bd,.anTrkHd .bd{display:none}
+}
+
+/* 个股页顶部的异动归因面板：点进来看 K 线时，原因、证据、持续性要一起给出 */
+.awGrid{display:grid; grid-template-columns:minmax(0,1fr) 208px; gap:12px; padding:9px 12px 11px}
+@media (max-width:1180px){.awGrid{grid-template-columns:1fr}}
+.awMain{min-width:0; display:flex; flex-direction:column; gap:4px}
+.awHd{font-size:9.5px; color:var(--dim); display:flex; gap:7px; align-items:center; flex-wrap:wrap}
+.awRm{font-size:13px; line-height:1.55; color:var(--text); font-weight:500; overflow-wrap:anywhere}
+.awRm.empty{color:var(--muted); font-weight:400; font-style:italic}
+.awEvs{display:flex; flex-direction:column; gap:2px; margin-top:2px}
+.awEvs .anEv{font-size:11px; line-height:1.5}
+.awEvs .anEv .tx i{font-size:9.5px}
+.awFail{font-size:10.5px; color:var(--gold); line-height:1.5}
+/* 页脚说明默认收起：清单改成紧凑列表后，这几百字的判据说明会把可视区挤掉一半 */
+.anDoc{font-size:10.5px; color:var(--muted); line-height:1.7}
+.anDoc>summary{cursor:pointer; color:var(--dim); font-size:11px; list-style:none; user-select:none}
+.anDoc>summary::-webkit-details-marker{display:none}
+.anDoc>summary::before{content:'▸ '}
+.anDoc[open]>summary::before{content:'▾ '}
+.anDoc>summary:hover{color:var(--text)}
+.anDoc>summary b{color:var(--gold); font-weight:500}
+.anDocBody{padding-top:3px}
+.anEmpty{padding:26px; text-align:center; color:var(--dim); font-size:12px; line-height:1.8}
 </style>
 </head>
 <body>
@@ -507,6 +691,7 @@ select{
       <div class="tabs" id="tabsView">
         <button data-v="stock" class="on">个股详情</button>
         <button data-v="theme">题材雷达<span class="badge" id="thBadge" style="display:none">0</span></button>
+        <button data-v="anom">低位异动<span class="badge" id="anomBadge" style="display:none">0</span></button>
         <button data-v="track">收益跟踪</button>
         <button data-v="fav">我的收藏<span class="badge" id="favBadge" style="display:none">0</span></button>
         <span id="tabNote"></span>
@@ -514,11 +699,17 @@ select{
 
       <div class="pane" id="paneStock">
       <div class="thBanner" id="thBanner" style="display:none">
-        <span>题材个股 · <b id="thBannerName">--</b></span>
-        <span style="color:var(--dim)">不属于当日「长上影阳线」名单，K 线与分时来自题材扫描</span>
+        <span id="thBannerPrefix">题材个股 · <b id="thBannerName">--</b></span>
+        <span style="color:var(--dim)" id="thBannerSub">不属于当日「长上影阳线」名单，K 线与分时来自题材扫描</span>
         <button id="thBack2">← 回到题材雷达</button>
       </div>
       <div class="card head" id="head"></div>
+
+      <div class="card" id="anWhyBox" style="display:none">
+        <div class="cbar"><b>异动原因</b><span id="anWhyDesc"></span>
+          <span style="margin-left:auto;font-size:10.5px;color:var(--dim)">五路消息倒查 · 政府背书为第一权重</span></div>
+        <div class="awGrid" id="anWhyBody"></div>
+      </div>
 
       <div class="card chart-card trend-card">
         <div class="cbar">
@@ -619,6 +810,12 @@ select{
           <div class="tkKpis" id="thKpis"></div>
         </div>
 
+        <div class="card" id="thCatBox" style="display:none">
+          <div class="cbar"><b>催化源清洗</b><span id="thCatDesc"></span>
+            <span style="margin-left:auto;font-size:10.5px;color:var(--dim)">新闻联播 + 韭研公社 · 只保留有产业信号的内容</span></div>
+          <div class="thCatBody" id="thCatBody"></div>
+        </div>
+
         <div class="cbar" style="padding:0 2px 6px"><b>主推题材</b><span id="thMainDesc"></span>
           <span style="margin-left:auto;font-size:10.5px;color:var(--dim)" id="thParams"></span>
         </div>
@@ -637,6 +834,39 @@ select{
 
         <div class="tkNote" id="thNote"></div>
       </div>
+
+      <div class="pane" id="paneAnom" style="display:none">
+        <div class="card head">
+          <div class="hname">
+            <div class="t1"><h2 style="font-size:17px">低位异动</h2><span class="code" id="anScope">低位 · 放量异动 · 与板块背离</span></div>
+            <div class="tags" id="anMeta"></div>
+          </div>
+          <div class="tkKpis" id="anKpis"></div>
+        </div>
+
+        <div class="card" id="anPolBox" style="display:none">
+          <div class="cbar"><b>当日政府动向</b><span id="anPolDesc"></span>
+            <span style="margin-left:auto;font-size:10.5px;color:var(--dim)">省部级以上政策文件 · 政府背书是本模块的第一权重</span></div>
+          <div class="anPolBody" id="anPolBody"></div>
+        </div>
+
+        <div class="cbar" style="padding:0 2px 6px"><b>异动清单</b><span id="anDesc"></span>
+          <div class="paneSeg" id="anSort">
+            <button data-s="score" class="on">综合</button>
+            <button data-s="days">持续性</button>
+            <button data-s="excess">背离度</button>
+          </div>
+        </div>
+        <div class="anList" id="anList"></div>
+
+        <div class="card" id="anTrkBox" style="display:flex;flex-direction:column;min-height:0">
+          <div class="cbar"><b>T+1 ~ T+5 收益跟踪</b><span id="anTrkDesc"></span>
+            <span style="margin-left:auto;font-size:10.5px;color:var(--dim)" id="anTrkMeta"></span></div>
+          <div class="anTrkBody" id="anTrkBody"></div>
+        </div>
+
+        <div class="tkNote" id="anNote"></div>
+      </div>
     </section>
   </main>
 </div>
@@ -647,6 +877,8 @@ const ALL = __ALL_JSON__;        // 内嵌了完整图表的交易日 {日期: [
 const HIST = __HIST_JSON__;      // 只有轻量明细的交易日（更早的，图表在独立页）
 const TRACK = __TRACK_JSON__;
 const THEME = __THEME_JSON__;    // 题材雷达：低位新题材扫描（可能为空对象）
+const ANOM = __ANOM_JSON__;      // 低位异动：个股低位放量 + 消息归因 + 持续性
+const ATRACK = __ANOMTRACK_JSON__; // 异动名单的 T+1~T+5 收益跟踪（跨批次）
 const META = __META_JSON__;      // {date, dates[], pages{日期:相对路径}, n, core, hit, cohorts}
 
 /* 当前查看的数据集：本页所属交易日 = DATA（有图表）；其它交易日 = HIST 里的轻量明细 */
@@ -786,6 +1018,8 @@ function renderList() {
 
 /* ---------------- detail head ---------------- */
 function renderHead(d) {
+  const awb = $('#anWhyBox');
+  if (awb) awb.style.display = 'none';   // 回到正常个股详情，异动归因面板收起
   const bars = d.daily || [];
   const c = d.price, o = d.open, h = d.high, l = d.low;
   const shadowAbs = h - c, bodyAbs = Math.abs(c - o);
@@ -1396,11 +1630,30 @@ $('#thCards').addEventListener('click', e => {
   showThemeStock(row.dataset.tcode);
 });
 
+$('#anList').addEventListener('click', e => {
+  const c = e.target.closest('.anRow[data-tcode]'); if (!c) return;
+  showAnomStock(c.dataset.tcode);
+});
+
+$('#anTrkBody').addEventListener('click', e => {
+  const c = e.target.closest('.anTrkRow[data-tcode]'); if (!c) return;
+  if (findAnomStock(c.dataset.tcode)) { showAnomStock(c.dataset.tcode); return; }
+  toast('这只票不在当日异动名单里，历史批次暂无内嵌图表');
+});
+
+$('#anSort').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  anSort = b.dataset.s;
+  document.querySelectorAll('#anSort button').forEach(x => x.classList.toggle('on', x === b));
+  renderAnom();
+});
+
 /* 从题材个股返回题材页；头部与顶部提示条两处按钮 */
 document.addEventListener('click', e => {
   if (!e.target.closest('#thBack, #thBack2')) return;
+  const back = (state.thRow && state.thRow.mode === 'anom') ? 'anom' : 'theme';
   clearThRow();
-  switchTab('theme');
+  switchTab(back);
 });
 
 $('#thSort').addEventListener('click', e => {
@@ -1714,6 +1967,7 @@ function clearThRow() {
   if (!state.thRow) return;
   state.thRow = null;
   const b = $('#thBanner'); if (b) b.style.display = 'none';
+  const w = $('#anWhyBox'); if (w) w.style.display = 'none';
 }
 
 function showThemeStock(code) {
@@ -1736,16 +1990,58 @@ function showThemeStock(code) {
   selectTh(state.thRow);
 }
 
+function findAnomStock(code) {
+  return ((ANOM && ANOM.items) || []).find(x => String(x.code) === String(code)) || null;
+}
+
+/* 低位异动卡片 → K线：数据结构与题材个股一致，直接复用个股页 */
+function showAnomStock(code) {
+  const it = findAnomStock(code);
+  if (!it) { alert('没有找到 ' + code + ' 的异动明细'); return; }
+  if (!it.daily || !it.daily.length) {
+    alert(it.name + '（' + code + '）的 K 线没有抓到。\n\n可能是抓取时接口限流，下一次运行时会自动补齐。');
+    return;
+  }
+  const w = it.why || {};
+  const last = it.daily[it.daily.length - 1] || [];
+  state.thRow = {
+    mode: 'anom',
+    code: it.code, name: it.name, mkt: it.mkt,
+    price: it.close, chg: it.chg, turn: it.turn,
+    mcap: it.mcap, fmcap: it.fmcap || null, netIn: it.netIn,
+    pe: it.pe, ind: it.ind,
+    daily: it.daily, trend: it.trend, preClose: it.preClose,
+    date: (ANOM && ANOM.date) || state.date,
+    amount: it.amt || last[6] || 0,
+    themeName: (it.board && it.board.name) || it.ind || '',
+    lead: null, core: null,
+    anRef: it,                       // 完整异动明细，个股页的「异动原因」面板要用
+    an: {dd: it.dd, pos: it.pos, excess: it.excess, vol: it.volRatio,
+         lvl: w.lvl, days: w.days, govLvl: w.govLvl, cat: w.cat},
+  };
+  switchTab('stock');
+  selectTh(state.thRow);
+}
+
 function selectTh(row) {
   hoverTrend = null; hoverK = null;
   document.querySelectorAll('#list .item').forEach(el => el.classList.remove('on'));
   const b = $('#thBanner');
   if (b) {
     b.style.display = '';
+    const bp = $('#thBannerPrefix');
+    if (bp && bp.firstChild) bp.firstChild.nodeValue = row.mode === 'anom' ? '低位异动 · ' : '题材个股 · ';
     const bn = $('#thBannerName');
     if (bn) bn.textContent = row.name + '（' + row.code + '）· ' + (row.themeName || '');
+    const bs = $('#thBannerSub');
+    if (bs) bs.textContent = row.mode === 'anom'
+      ? '不属于当日「长上影阳线」名单，K 线与分时来自低位异动扫描'
+      : '不属于当日「长上影阳线」名单，K 线与分时来自题材扫描';
+    const bb = $('#thBack2');
+    if (bb) bb.textContent = row.mode === 'anom' ? '← 回到低位异动' : '← 回到题材雷达';
   }
   renderHeadTh(row);
+  renderAnWhy(row);
   drawTrend($('#cvTrend'), row);
   drawKline($('#cvK'), row);
   $('#noteTrend').style.display = 'none';
@@ -1770,13 +2066,19 @@ function renderHeadTh(d) {
       <div class="t1"><h2>${d.name}</h2><span class="code">${d.code} · ${d.mkt || ''}</span>
         <button class="favBtn ${isFav(d.code) ? 'on' : ''}" data-fav="${d.code}"
           title="加入收藏后按当日收盘价跟踪后续涨跌">${isFav(d.code) ? '★ 已收藏' : '☆ 收藏'}</button>
-        <button class="thBack" id="thBack">← 返回题材雷达</button></div>
+        <button class="thBack" id="thBack">${d.mode === 'anom' ? '← 返回低位异动' : '← 返回题材雷达'}</button></div>
       <div class="tags">
-        <span class="tag hot">题材：${d.themeName || '--'}</span>
+        <span class="tag hot">${d.mode === 'anom' ? '板块：' : '题材：'}${d.themeName || '--'}</span>
         <span class="tag">${d.date} 收盘</span>
-        <span class="tag">龙头 ${(d.lead || 0).toFixed(0)} · 核心 ${(d.core || 0).toFixed(0)}</span>
+        ${d.mode === 'anom' && d.an
+          ? `<span class="tag hot">低位异动 · ${d.an.lvl || ''}</span>
+             <span class="tag">距250日高 ${d.an.dd.toFixed(1)}% · 分位 ${d.an.pos.toFixed(0)}%</span>
+             <span class="tag up">背离 +${d.an.excess.toFixed(1)}pct</span>
+             ${d.an.govLvl ? `<span class="tag">${d.an.govLvl}</span>` : ''}
+             ${d.an.days ? `<span class="tag">催化约 ${d.an.days} 天</span>` : ''}`
+          : `<span class="tag">龙头 ${(d.lead || 0).toFixed(0)} · 核心 ${(d.core || 0).toFixed(0)}</span>
+             <span class="tag">不在长上影选股名单内</span>`}
         ${riskTag}
-        <span class="tag">不在长上影选股名单内</span>
       </div>
     </div>
     <div class="hprice">
@@ -1790,18 +2092,26 @@ function renderHeadTh(d) {
       <div class="metric"><span>主力净流入</span><b class="${dirCls(d.netIn)}" style="font-size:13px">${fmtAmt(d.netIn)}</b></div>
       <div class="metric"><span>近5日</span><b class="${dirCls(chg5)}">${signed(chg5)}</b></div>
       <div class="metric"><span>近20日</span><b class="${dirCls(chg20)}">${signed(chg20)}</b></div>
-      <div class="metric"><span>毛利率</span><b>${pct(f.gross)}</b></div>
-      <div class="metric"><span>ROE</span><b>${pct(f.roe)}</b></div>
-      <div class="metric"><span>营收同比</span><b class="${dirCls(f.revG)}">${pct(f.revG)}</b></div>
+      ${d.mode === 'anom'
+        ? `<div class="metric"><span>市盈率(TTM)</span><b style="font-size:13px">${d.pe == null ? '--' : (d.pe < 0 ? '<span class="warn">亏损</span>' : d.pe.toFixed(1))}</b></div>
+           <div class="metric"><span>放量倍数</span><b>${d.an && d.an.vol ? d.an.vol.toFixed(1) + '×' : '--'}</b></div>
+           <div class="metric"><span>所属行业</span><b style="font-size:11.5px">${d.ind || '--'}</b></div>`
+        : `<div class="metric"><span>毛利率</span><b>${pct(f.gross)}</b></div>
+           <div class="metric"><span>ROE</span><b>${pct(f.roe)}</b></div>
+           <div class="metric"><span>营收同比</span><b class="${dirCls(f.revG)}">${pct(f.revG)}</b></div>`}
     </div>`;
 
   const lines = [];
   if (f.period) lines.push(`财务口径 <b>${f.period}</b>：毛利率 ${pct(f.gross)}、ROE ${pct(f.roe)}、资产负债率 ${pct(f.debt)}、营收同比 ${pct(f.revG)}、净利润同比 ${pct(f.npG)}。`);
-  lines.push(risk.hard.length
-    ? `<span class="warn">⚠ 命中硬雷（${risk.hard.join('、')}），本应剔除，此处仅因题材归属而展示</span>`
-    : (risk.soft.length
-        ? `<span class="warn">风险提示：${risk.soft.join('、')}</span>` : '财务排雷：未发现业绩预亏、连续亏损、高负债、现金流转负、大股东减持等风险项。'));
-  lines.push(`<div style="margin-top:3px;color:var(--dim);font-size:10.5px">该股不属于当日「长上影阳线」筛选结果，是从题材雷达跳转查看；数据来源 东方财富行情接口 · 截至 ${d.date} 收盘 · 仅供研究复盘，不构成投资建议</div>`);
+  if (d.mode === 'anom') {
+    lines.push('<span class="warn">注意：本页来自「低位异动」，只做消息催化与持续性归因，<b>没有做财务排雷</b>（未核业绩、负债、减持等），下单前请自行补查。</span>');
+  } else {
+    lines.push(risk.hard.length
+      ? `<span class="warn">⚠ 命中硬雷（${risk.hard.join('、')}），本应剔除，此处仅因题材归属而展示</span>`
+      : (risk.soft.length
+          ? `<span class="warn">风险提示：${risk.soft.join('、')}</span>` : '财务排雷：未发现业绩预亏、连续亏损、高负债、现金流转负、大股东减持等风险项。'));
+  }
+  lines.push(`<div style="margin-top:3px;color:var(--dim);font-size:10.5px">该股不属于当日「长上影阳线」筛选结果，是从${d.mode === 'anom' ? '「低位异动」' : '题材雷达'}跳转查看；数据来源 东方财富行情接口 · 截至 ${d.date} 收盘 · 仅供研究复盘，不构成投资建议</div>`);
   $('#forma').innerHTML = lines.join('<div style="margin-top:3px"></div>');
   const pre = d.preClose || (n >= 2 ? B[n - 2][4] : null);
   $('#preTxt').textContent = '昨收 ' + nf(pre);
@@ -1811,23 +2121,40 @@ function renderHeadTh(d) {
 function thCard(t, isMain) {
   const leads = (t.leaders || []).slice(0, 8);      // 全部列出，每行都可点开看 K 线
   const news = (t.titles || []).slice(0, 2);
-  const hit = [t.low ? '低位' : '', t.new ? '新' : '', t.hot ? '爆发' : ''].filter(Boolean);
+  const hit = [t.low ? '低位' : '', t.new ? '轮动新' : '', t.hot ? '爆发' : ''].filter(Boolean);
+  const lead60 = t.lead60 === undefined ? null : t.lead60;
+  const last = (t.lastLead === null || t.lastLead === undefined) ? null : t.lastLead;
+  const rotTxt = lead60 === null ? '轮动 --'
+    : (lead60 === 0 ? '60日未领涨' : `60日领涨 ${lead60} 次`) + (last !== null ? ` · ${last}天前` : '');
+  const cat = t.cat || null;
+  const ev = (cat && cat.ev) || [];
   return `<div class="thCard ${isMain ? 't-main' : ''}">
     <div class="th-h"><span class="nm">${t.name}</span>
+      ${t.line ? `<span class="th-flag" title="同主线归并，避免同一条线重复入选">${t.line}</span>` : ''}
       <span class="sc">${t.score.toFixed(0)} 分</span></div>
     <div style="display:flex;gap:4px;flex-wrap:wrap">
-      <span class="th-flag ${t.low ? 'on' : ''}">回撤 ${t.dd.toFixed(0)}%</span>
-      <span class="th-flag nw ${t.new ? 'on' : ''}">K线 ${t.bars} 根</span>
+      <span class="th-flag ${t.low ? 'on' : ''}">回撤 ${t.dd.toFixed(0)}% · 位置 ${t.pos.toFixed(0)}%</span>
+      <span class="th-flag nw ${t.new ? 'on' : ''}" title="这一波热点跟过去60个交易日领涨的题材是不是同一批">${rotTxt}</span>
       <span class="th-flag bt ${t.hot ? 'on' : ''}">近24h ${t.h24} 条 · ${t.burst.toFixed(1)}×</span>
+      ${t.catBonus > 0 ? `<span class="th-flag on" title="新闻联播/韭研公社背书">催化 +${t.catBonus}</span>` : ''}
       ${hit.length === 3 ? '<span class="th-flag on">三项齐备</span>' : ''}
     </div>
     <div class="th-grid">
-      <div class="th-m"><span>250日位置</span><b>${t.pos.toFixed(0)}%</b></div>
       <div class="th-m"><span>当日</span><b class="${dirCls(t.chg)}">${signed(t.chg)}</b></div>
       <div class="th-m"><span>近20日</span><b class="${dirCls(t.c20)}">${signed(t.c20)}</b></div>
       <div class="th-m"><span>近60日</span><b class="${dirCls(t.c60)}">${signed(t.c60)}</b></div>
       <div class="th-m"><span>主力净流入</span><b class="${dirCls(t.netIn)}">${(t.netIn / 1e8).toFixed(1)}亿</b></div>
+      <div class="th-m"><span>轮动分</span><b>${(t.rotScore || 0).toFixed(0)}</b></div>
     </div>
+    ${ev.length ? `<div class="th-cat">
+      <div class="th-cat-h">催化证据
+        ${cat.xwlb ? `<em>新闻联播 ${cat.xwlb}</em>` : ''}
+        <span>韭研点名 ${cat.hotlist || 0} · 提及 ${cat.mention || 0}</span>
+      </div>
+      ${ev.slice(0, 3).map(e => `<div class="th-cat-e">
+        <span class="src ${e.src === '新闻联播' ? 'x' : 'j'}">${e.src}</span>
+        <span class="tx" title="${(e.title || '').replace(/"/g, '&quot;')}">${e.text}</span></div>`).join('')}
+    </div>` : ''}
     ${news.length ? `<div class="th-news">${news.map(a =>
       `<div title="${a.t}"><i>${(a.d || '').slice(5)}</i>${a.t}</div>`).join('')}</div>` : ''}
     <div class="th-lead">
@@ -1835,7 +2162,7 @@ function thCard(t, isMain) {
       ${leads.length ? leads.map(L => `<div class="th-lr tk" data-tcode="${L.code}" data-tname="${t.name}"
         title="点击查看 ${L.name} 的日K线与分时图">
         <span class="cd">${L.code}</span>
-        <span class="n2">${L.name}${(L.risk && L.risk.soft && L.risk.soft.length)
+        <span class="n2">${L.name}${L.named ? ' <i class="th-named" title="韭研公社当日舆情点名，题材身份更纯">✓点名</i>' : ''}${(L.risk && L.risk.soft && L.risk.soft.length)
           ? ` <i class="th-risk" title="风险：${L.risk.soft.join('、')}">${L.risk.soft.length}险</i>` : ''}</span>
         <span class="num ${dirCls(L.chg)}">${signed(L.chg)}</span>
         <span class="num">${L.lead.toFixed(0)}</span>
@@ -1843,6 +2170,38 @@ function thCard(t, isMain) {
       </div>`).join('') : '<div class="th-none" style="padding:8px">该题材的主板成分股都带硬伤，已全部剔除</div>'}
     </div>
   </div>`;
+}
+
+/* 催化源面板：新闻联播条目 + 韭研清洗后的可用文档 */
+function renderCatalyst(CA) {
+  const box = $('#thCatBox'), body = $('#thCatBody'), desc = $('#thCatDesc');
+  if (!CA) { box.style.display = 'none'; return; }
+  box.style.display = '';
+  const X = CA.xwlb || {}, J = CA.jiuyan || {};
+  const ind = X.industry || [], docs = J.docs || [];
+  const okDocs = docs.filter(d => d.usable);
+  desc.textContent = `${X.date || '--'} 联播 ${X.total || 0} 条（产业 ${ind.length}）· 韭研可用 ${J.usable || 0}/${J.total || 0} 篇`;
+
+  const xItem = ind.length
+    ? ind.slice(0, 5).map(x => `<div class="thCatItem"><span class="tx"><b>${x.title}</b></span></div>`).join('')
+    : `<div class="thCatEmpty">${X.note || '当日没有产业类条目'}</div>`;
+  const jItem = okDocs.length
+    ? okDocs.slice(0, 6).map(d => `<div class="thCatItem" title="${(d.reason || '').replace(/"/g, '&quot;')}">
+        <span class="sc">${d.score}</span>
+        <span class="tx"><b>${d.title}</b>${d.hotlist ? ' · 热点盘点' : ''}
+        ${(d.themes || []).length ? `<span style="color:var(--dim)">（${d.themes.slice(0, 3).join('、')}）</span>` : ''}</span></div>`).join('')
+    : `<div class="thCatEmpty">当日没有通过清洗的文档</div>`;
+
+  body.innerHTML = `
+    <div class="thCatCol">
+      <h4>新闻联播 <i>${X.available ? '有产业信号' : '无产业信号'}</i></h4>
+      ${xItem}
+    </div>
+    <div class="thCatCol">
+      <h4>韭研公社 <i>全站可用 ${J.usable || 0} 篇</i>
+        <span style="color:var(--dim)">展示评分最高的 ${okDocs.length} 篇</span></h4>
+      ${jItem}
+    </div>`;
 }
 
 function renderTheme() {
@@ -1855,6 +2214,7 @@ function renderTheme() {
     $('#thMeta').innerHTML = '';
     $('#thMainDesc').textContent = '';
     $('#thParams').textContent = '';
+    $('#thCatBox').style.display = 'none';
     cards.innerHTML = '<div class="th-none">还没有题材扫描结果。<br>扫描脚本跑完并重新构建页面后，这里会显示低位新题材。</div>';
     table.innerHTML = '';
     $('#thWatchDesc').textContent = '';
@@ -1864,6 +2224,9 @@ function renderTheme() {
   const main = all.filter(t => t.tier === 'main');
   const watch = (D.watchBrief || []).slice();
   const c = D.counts || {};
+  const catN = all.filter(t => (t.catBonus || 0) > 0).length;
+
+  renderCatalyst(D.catalyst);
 
   $('#thScope').textContent = `${D.date} 收盘 · 扫描 ${c.themes || 0} 个题材`;
   $('#thMeta').innerHTML = `
@@ -1874,17 +2237,18 @@ function renderTheme() {
     ['主推题材', main.length + ' 个', 'hl'],
     ['观察池', (c.watch || 0) + ' 个', ''],
     ['低位门槛', '−' + (p.lowDdEff || p.lowDd || 30) + '%', ''],
-    ['爆发门槛', (p.hot24 || 8) + ' 条', '']
+    ['爆发门槛', (p.hot24 || 10) + ' 条', ''],
+    ['催化命中', catN + ' 个', '']
   ].map(([k, v, cl]) => `<div class="kpi ${cl}"><b>${v}</b><span>${k}</span></div>`).join('');
 
-  $('#thParams').textContent = `新：K线<${p.newBars || 800}根 · 低位：回撤≥${p.lowDdEff || p.lowDd}% 且 位置≤${p.lowPos}% · 爆发：近24h≥${p.hot24}条 或 日均≥${p.hotBurst}倍 · 生成于 ${D.generated || ''}`;
+  $('#thParams').textContent = `新颖＝轮动不是板块新旧：近${p.rotWin || 60}日领涨≤2次才算新 · 低位：回撤≥${p.lowDdEff || p.lowDd}% 且 位置≤${p.lowPos}% · 爆发：近24h≥${p.hotMin || 5}条且${p.hotBurst}倍，或≥${p.hot24}条 · 催化：联播+韭研最多加${10}分 · 生成于 ${D.generated || ''}`;
 
   $('#thMainDesc').textContent = main.length
-    ? '低位 + 新题材 + 信息爆发，三项同时满足'
+    ? '低位 + 轮动新颖 + 信息爆发，三项同时满足'
     : '本轮没有三项齐全的题材，看下方观察池';
   cards.innerHTML = main.length
     ? main.map(t => thCard(t, true)).join('')
-    : `<div class="th-none">本轮没有同时满足「低位 + 新题材 + 信息爆发」的题材。<br>
+    : `<div class="th-none">本轮没有同时满足「低位 + 轮动新颖 + 信息爆发」的题材。<br>
         市场整体回撤中位数 ${p.medDd || '--'}%，说明多数题材都在跌，但缺少资讯催化。<br>
         下方观察池是只差一项的题材。</div>`;
 
@@ -1893,19 +2257,280 @@ function renderTheme() {
   const ws = watch.slice().sort((a, b) => key(a) - key(b));
   $('#thWatchDesc').textContent = `共 ${c.watch || 0} 个，显示前 ${ws.length} 个`;
   table.innerHTML = `<div class="thRow hd"><span>题材</span><span class="num">综合</span><span class="num">回撤</span>
-      <span class="num">位置</span><span class="num">24h</span><span class="num">倍数</span><span>命中条件</span></div>`
+      <span class="num">位置</span><span class="num">24h</span><span class="num">60日领涨</span><span>命中条件</span></div>`
     + ws.map(t => {
-      const hit = [t.low ? '低' : '', t.new ? '新' : '', t.hot ? '爆' : ''].filter(Boolean).join('·');
+      const hit = [t.low ? '低' : '', t.new ? '轮' : '', t.hot ? '爆' : ''].filter(Boolean).join('·');
+      const l60 = (t.lead60 === undefined || t.lead60 === null) ? '--'
+        : (t.lead60 === 0 ? '未领涨'
+           : `${t.lead60}次` + (t.lastLead !== null && t.lastLead !== undefined ? `·${t.lastLead}天前` : ''));
       return `<div class="thRow">
-        <span class="nm">${t.name}</span>
+        <span class="nm" title="${t.line || ''}${t.catBonus > 0 ? ' · 有催化' : ''}">${t.name}${t.catBonus > 0 ? ' <i class="th-named">催</i>' : ''}</span>
         <span class="num">${t.score.toFixed(0)}</span>
         <span class="num">${t.dd.toFixed(0)}%</span>
         <span class="num">${t.pos.toFixed(0)}%</span>
         <span class="num">${t.h24}</span>
-        <span class="num">${t.burst.toFixed(1)}</span>
+        <span class="num">${l60}</span>
         <span style="color:var(--muted)">${hit || '—'}</span>
       </div>`;
     }).join('');
+}
+
+/* ---------------- 低位异动 ---------------- */
+let anSort = 'score';
+
+function anGovCls(lvl, sc) {
+  if (!lvl) return '';
+  if (lvl === '海外映射') return 'ovs';
+  if (sc >= 90) return 'gov';        // 有政策动词的真文件才用最高权重色
+  if (sc >= 60) return 'prov';       // 只被提及，降一档
+  return '';
+}
+function anSrcCls(e) {
+  if (e.tag === '点名') return 'jy';
+  if (e.src === '新闻联播' || e.src === '政策') return 'gov';
+  if (e.relate === '个股') return 'own';
+  return 'sec';
+}
+
+/* 清单用表格行：一行一只，只留能横向比的数字；证据与持续性搬到个股页。
+   证据去重逻辑见 anWhyHTML —— 主因就是从第一条证据提炼的，原文不要重复列。 */
+function anFlagTg(it) {
+  const w = it.why || {};
+  const tg = [];
+  const sn = it.sneak || '';
+  const snCls = sn === '资金抢跑' ? 'sneak' : (sn === '疑似抢跑' ? 'sneak2'
+              : (sn === '放量进场' ? 'inflow' : 'quiet'));
+  if (sn) tg.push(`<span class="anTg ${snCls}" title="${it.sneakTxt || ''}">${sn}</span>`);
+  if (it.ups20) tg.push(`<span class="anTg quiet" title="近 20 个交易日已涨停 ${it.ups20} 次，今天更像二波启动而不是全新首日">已板${it.ups20}次</span>`);
+  if (it.named) tg.push('<span class="anTg named" title="韭研公社当日早报/晚报/点评点名">点名</span>');
+  const gsc = w.gov || 0;
+  let govLbl = '';
+  if (w.govLvl === '海外映射') govLbl = w.govLvl;
+  else if (gsc >= 90) govLbl = w.govLvl;
+  else if (gsc >= 60) govLbl = w.govLvl + '·提及';
+  if (govLbl) tg.push(`<span class="anTg ${anGovCls(w.govLvl, gsc)}" title="政府背书层级">${govLbl}</span>`);
+  (it.risk || []).slice(0, 1).forEach(r => tg.push(`<span class="anTg warn">${r}</span>`));
+  return tg;
+}
+
+const AN_HEAD = `<div class="anHead">
+  <span>个股</span><span class="n">涨幅</span><span>标记</span><span class="n">前5日</span>
+  <span class="n">距高·分位</span><span class="n">成交额/均量</span><span class="n">背离</span>
+  <span class="n">持续性</span><span>主因（点开看证据与持续性）</span></div>`;
+
+function anRow(it) {
+  const w = it.why || {};
+  const days = w.days || 0;
+  const ar = it.amtRatio || 0;
+  return `<div class="anRow s-${w.lvl || ''}" data-tcode="${it.code}"
+      title="点击查看 ${it.name} 的日K、分时与异动原因">
+    <span class="nm">${it.name}<i>${it.code}</i></span>
+    <span class="cg ${dirCls(it.chg)}">${signed(it.chg)}</span>
+    <span class="tg">${anFlagTg(it).join('')}</span>
+    <span class="num ${dirCls(it.prevCum || 0)}">${signed(it.prevCum || 0)}</span>
+    <span class="num">${it.dd.toFixed(1)}% · ${it.pos.toFixed(0)}%</span>
+    <span class="num">${(it.amt / 1e8).toFixed(1)}亿<i class="${ar <= 1 ? 'quiet' : ''}"> ${ar.toFixed(2)}×</i></span>
+    <span class="num up">+${it.excess.toFixed(1)}</span>
+    <span class="dv"><b class="${days >= 7 ? 'hot' : ''}">${w.lvl || '--'}</b> ${days.toFixed(1)}天</span>
+    <span class="rs">${w.reason || '未找到可解释的公开消息'}</span>
+  </div>`;
+}
+
+/* 个股页的异动归因：主因全文 + 全部证据 + 持续性。清单里放不下的都在这儿 */
+function anWhyHTML(it) {
+  const w = it.why || {};
+  const rawEv = (w.ev || []);
+  const rk = (w.reason || '').replace(/\s+/g, '').slice(0, 40);
+  const seen = new Set();
+  const evs = rawEv.filter(e => {
+    const k = (e.t || '').replace(/\s+/g, '');
+    if (!k) return false;
+    if (rk && rk.indexOf(k.slice(0, 40)) >= 0) return false;   // 与主因同一句话，不再列
+    if (seen.has(k.slice(0, 24))) return false;                // 同一标题被多路来源重复收录
+    seen.add(k.slice(0, 24));
+    return true;
+  }).slice(0, 6);
+  const days = w.days || 0;
+  const barCls = days >= 7 ? '' : (days >= 4 ? 'mid' : 'low');
+  const risks = (it.risk || []).map(r => `<span class="anTg warn">${r}</span>`).join('');
+  const gsc = w.gov || 0;
+  let govLbl = '';
+  if (w.govLvl === '海外映射') govLbl = w.govLvl;
+  else if (gsc >= 90) govLbl = w.govLvl;
+  else if (gsc >= 60) govLbl = w.govLvl + ' · 提及';
+  const nexts = (w.next || []);
+
+  return `<div class="awMain">
+      <div class="awHd"><span>为什么涨${w.cat ? ` · <b style="color:var(--gold);font-weight:500">${w.cat}</b>` : ''}</span>${risks}</div>
+      <div class="awRm ${w.reason ? '' : 'empty'}">${w.reason || '当天没有找到能解释这条异动的公开消息'}</div>
+      <div class="awEvs">
+        ${evs.map(e => `<div class="anEv"><span class="s ${anSrcCls(e)}">${e.tag === '点名' ? '点名' : e.src}</span>
+          <span class="tx">${e.t}<i>${e.d ? e.d.slice(5) : ''}${e.lvl ? ' · ' + e.lvl : ''}${e.relate === '个股' ? ' · 个股' : ' · 板块'}</i></span></div>`).join('')}
+        ${(evs.length || rawEv.length) ? '' : `<div class="anEv"><span class="tx" style="color:var(--dim)">五路来源（个股新闻 / 板块新闻 / 政策文件 / 新闻联播 / 韭研点名）都没有相关报道。首日异动经常如此——按「资金抢跑」看，别硬套题材。</span></div>`}
+      </div>
+    </div>
+    <div class="anDur">
+      <div class="dh">催化持续性</div>
+      <div class="dv">${days}<em>个交易日</em></div>
+      <div class="anBar ${barCls}"><i style="width:${Math.min(100, days / 10 * 100)}%"></i></div>
+      <div class="anNext">${govLbl ? `背书层级：<b>${govLbl}</b><br>` : '未见政府背书<br>'}
+        ${nexts.length ? `后续节点：<b>${nexts.join('、')}</b><br>` : '未发现明确后续节点<br>'}
+        <span style="color:var(--dim)">按类别×级别×新鲜度推算，非预测涨跌</span></div>
+    </div>`;
+}
+
+function renderAnWhy(row) {
+  const box = $('#anWhyBox');
+  if (!box) return;
+  const it = row && row.mode === 'anom' ? row.anRef : null;
+  if (!it) { box.style.display = 'none'; return; }
+  const w = it.why || {};
+  box.style.display = '';
+  $('#anWhyDesc').textContent = `${it.name}（${it.code}）· 板块 ${(it.board && it.board.name) || it.ind || '--'}`;
+  $('#anWhyBody').innerHTML = anWhyHTML(it);
+}
+
+/* ---------------- 异动名单 T+1 ~ T+5 收益跟踪 ----------------
+   每批异动名单以信号日收盘价为成本，向后记 5 个交易日的累计涨跌幅。
+   台账由 build/anom_track.py 生成，页面只负责画。 */
+function anTrkCell(r, k) {
+  const v = (r.rets || [])[k];
+  if (v == null || isNaN(v)) {
+    return `<div class="cell void" title="T+${k + 1} 还没到">--</div>`;
+  }
+  const dt = (r.dates || [])[k] || '';
+  const cl = (r.close || [])[k];
+  const tip = `T+${k + 1} ${dt}${cl != null ? ' 收盘 ' + cl : ''}\n累计 ${signed(v)}`;
+  return `<div class="cell ${dirCls(v)}" title="${tip}">${v > 0 ? '+' : ''}${v.toFixed(2)}%</div>`;
+}
+
+function anTrkRow(r) {
+  const MAXD = (ATRACK && ATRACK.maxDays) || 5;
+  let cells = '';
+  for (let k = 0; k < MAXD; k++) cells += anTrkCell(r, k);
+  const hl = (r.days ? (r.mfe > 0 ? '+' : '') + r.mfe.toFixed(1) + '% / '
+                     + (r.mae > 0 ? '+' : '') + r.mae.toFixed(1) + '%' : '--');
+  return `<div class="anTrkRow" data-tcode="${r.code}" title="点击查看 ${r.name} 的 K 线与异动原因">
+    <div class="who2"><span class="nm">${r.name}</span><span class="cd">${r.code}</span></div>
+    <div class="bd">${r.board || '—'}</div>
+    <div class="num">${nf(r.base)}</div>
+    ${cells}
+    <div class="hl" title="窗口内最高 / 最低（相对信号价）">${hl}</div>
+  </div>`;
+}
+
+function anTrkGrp(c) {
+  const MAXD = (ATRACK && ATRACK.maxDays) || 5;
+  const av = (c.avg || []).filter(a => a.ret != null);
+  const avgTxt = av.length
+    ? av.map(a => `T+${a.t} <b class="${dirCls(a.ret)}">${signed(a.ret)}</b>`).join('　')
+    : `T+1 ~ T+${MAXD} 待填充`;
+  const win = av.length ? av[av.length - 1].win : null;
+  const idxs = (c.idx || []).filter(v => v != null);
+  return `<div class="anTrkGrp"><b>${c.date} 批次</b>
+    <span>${c.n} 只 · T+${c.days} / T+${MAXD}${c.sealed ? ' · 已封存' : ''}</span>
+    <span class="av">${avgTxt}</span>
+    ${win != null ? `<span class="av">胜率 ${win}%</span>` : ''}
+    ${idxs.length ? `<span class="sp">上证 ${signed(idxs[idxs.length - 1])}</span>` : ''}</div>`;
+}
+
+function renderAnTrk() {
+  const box = $('#anTrkBody'), wrap = $('#anTrkBox');
+  if (!box || !wrap) return;
+  const T = ATRACK || {};
+  const cs = T.cohorts || [];
+  const MAXD = T.maxDays || 5;
+  if (!cs.length) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+  $('#anTrkMeta').textContent = T.updated ? '更新 ' + T.updated : '';
+  $('#anTrkDesc').textContent = '信号日收盘价为成本 · 等权 · 不含手续费';
+
+  let head = `<div class="anTrkHd"><span>个股</span><span class="bd">板块</span>
+    <span class="n">信号价</span>`;
+  for (let k = 1; k <= MAXD; k++) head += `<span class="n">T+${k}</span>`;
+  head += '<span class="n">窗口高/低</span></div>';
+
+  const tip = cs[0].days ? '' : `<div class="anTrkTip"><b>最新批次今天才出信号（T+0）。</b>
+    这 ${cs[0].n} 只的收盘价已经记为成本，下个交易日跑完数据后 T+1 一列会自动变成实际收益，
+    之后每天填一格，满 T+${MAXD} 封存。</div>`;
+
+  box.innerHTML = tip + cs.map(c => anTrkGrp(c) + head
+    + (c.items || []).map(anTrkRow).join('')).join('');
+}
+
+function renderAnom() {
+  const list = $('#anList');
+  const d = ANOM || {};
+  const items = d.items || [];
+  const p = d.params || {};
+
+  if (!items.length) {
+    $('#anScope').textContent = '暂无数据';
+    $('#anKpis').innerHTML = '';
+    $('#anMeta').innerHTML = '';
+    $('#anDesc').textContent = '';
+    $('#anPolBox').style.display = 'none';
+    $('#anNote').innerHTML = '';
+    $('#anTrkBox').style.display = 'none';
+    list.innerHTML = '<div class="anEmpty">还没有扫描结果。<br>低位异动脚本跑完并重新构建页面后，这里会显示"当天首日放量异动、低位、且与板块背离"的票。</div>';
+    return;
+  }
+
+  const c = d.counts || {};
+  const strong = items.filter(x => (x.why || {}).lvl === '强').length;
+  const gov = items.filter(x => ((x.why || {}).gov || 0) >= 60).length;
+  const named = items.filter(x => x.named).length;
+  const sneakN = items.filter(x => x.sneak === '资金抢跑').length;
+
+  // 异动只保留最近一次扫描的 JSON；切到历史交易日时会话不对，必须说清楚
+  const cur = (typeof state !== 'undefined' && state.date) || '';
+  const stale = cur && d.date && cur !== d.date;
+  $('#anScope').textContent = stale
+    ? `${d.date} 收盘的扫描结果 · 当前所选 ${cur} 没有跑过异动扫描`
+    : `${d.date} 收盘 · 涨幅榜 ${c.scanned || 0} 只里筛出 ${items.length} 只当日首日异动`;
+  $('#anMeta').innerHTML = `
+    <span class="tag hot">只取当天首日异动</span>
+    <span class="tag">前 ${p.firstBars || 5} 日单日涨幅均 &lt; ${p.firstMaxDay || 3}%</span>
+    <span class="tag">前 ${p.firstBars || 5} 日累计 ≤ ${p.firstMaxCum || 8}%</span>
+    <span class="tag">低位 回撤≥${p.lowDd}% 或 分位≤${p.lowPos}%</span>
+    <span class="tag">背离 ≥${p.devMin}pct</span>
+    <span class="tag">仅主板 · 已剔 ST/新股</span>`;
+  $('#anKpis').innerHTML = [
+    ['异动个股', items.length + ' 只', 'hl'],
+    ['资金抢跑', sneakN + ' 只', ''],
+    ['持续性强', strong + ' 只', ''],
+    ['政府背书', gov + ' 只', ''],
+    ['韭研点名', named + ' 只', ''],
+  ].map(([k, v, cl]) => `<div class="kpi ${cl}"><b>${v}</b><span>${k}</span></div>`).join('');
+
+  const pol = d.policy || [];
+  if (pol.length) {
+    $('#anPolBox').style.display = '';
+    $('#anPolDesc').textContent = `识别到 ${pol.length} 条省部级以上政策`;
+    $('#anPolBody').innerHTML = pol.map(x => `<div class="anPolItem">
+      <span class="lv">${x.lvl}</span><span>${(x.d || '').slice(5)} ${x.t}</span></div>`).join('');
+  } else {
+    $('#anPolBox').style.display = 'none';
+  }
+
+  $('#anDesc').textContent = '只抓当天才起涨的第一根异动，前几天已经涨过的直接排除，再倒查消息面与持续时间';
+  $('#anNote').innerHTML = `<details class="anDoc"><summary><b>怎么读</b> · 四道闸门 / 各标记含义 / 持续天数怎么算（点击展开）</summary><div class="anDocBody">四道闸门依次是 ① <b>异动</b>（当日涨幅 ≥${p.minChg}%，且涨停 或 放量 ≥${p.volMin}×）→ ② <b>首日</b>（前 ${p.firstBars || 5} 个交易日<b>每天</b>涨幅都 &lt; ${p.firstMaxDay || 3}% 且累计 ≤ ${p.firstMaxCum || 8}% —— 前几天已经涨过的是鱼身，不是低位异动）→ ③ <b>低位</b>（距 250 日高回撤 ≥${p.lowDd}% 或 250 日分位 ≤${p.lowPos}%）→ ④ <b>背离</b>（个股涨幅 − 最强板块涨幅 ≥${p.devMin}pct，说明它不是靠板块抬起来的）。
+    <br><b>为什么只留首日</b>：连涨第三天才发现，消息早就发酵完，剩下的空间是接盘；首日异动的票往往还没有对应报道，这才是消息倒查真正有价值的时点。
+    <br><b>「资金抢跑」标是最值得看的一类</b>：当日成交额 ≤ 前 20 日均额的 0.85 倍（缩量）、主力净流入为正、且找不出能解释的个股消息。股价先动而量没起来，说明是少数人先买，不是消息扩散后的追高。反过来，<b>放量 1.6 倍以上</b>的涨停标「放量进场」，那多半意味着消息已经有人知道了。成交额不足 8000 万的只标「缩量封板」——盘子太小，几百万就能拉板，说明不了什么。
+    <br><b>「20日内已板N次」</b>是首日门的补丁：首日门只看前 5 个交易日，挡不住「涨一波 → 放量跌停洗盘 → 横三周 → 再涨停」这种二波启动（泰尔股份 10-20/21 两连板、洗盘后今天再度涨停，前 5 日安安静静照样过门）。看到这个标就说明它不是全新首日，而是上一波炒过之后的第二波。
+    <br><b>消息怎么收</b>：每只票同时查 5 路来源 —— 个股新闻（东财全文检索，${p.newsDays} 天窗口）、所属板块新闻（剔地域板块与宽泛行业，${p.sectorDays} 天）、省部级以上政策文件（${p.policyDays} 天）、新闻联播条目（${p.xwlbDays} 天）、韭研公社点名（当日早报/晚报/点评 + 概念库）。
+    <br><b>政府背书是本模块的第一权重</b>：只认省部级以上正式文件、会议、领导表态与国家级工程立项，券商研报、行业媒体评论、企业自宣一律不计入背书层级；背书层级越高、文件越"实"（有明确目标与时间表），持续窗口给得越长。
+    <br><b>持续时间</b>＝事件类别基础窗口 × 级别加成 × 新鲜度衰减，另加「可验证性 +1 天、有明确后续节点 +2 天」。它衡量的是<b>这条消息还能被市场反复谈论多久</b>，不是涨跌预测，也不构成买卖建议。
+    <br><b>点一行看什么</b>：清单只放能横向比的数字，点开个股页会给出完整主因、五路证据（个股 / 板块 / 政策 / 新闻联播 / 韭研点名）与持续性推算，K 线和分时也在同一页。
+    <br><b>找不到消息是正常的</b>：首日异动时消息面常常还没起来（像 10-28 的西部材料，缩量涨 7.9% 而当天没有任何报道，两天后才等到新闻联播）。这类票要按"资金抢跑"看，别硬套题材。</div></details>`;
+  // 注意：比较器必须同时用到两个参数，单参箭头（t => -t.score）会忽略 b，排序结果不可靠
+  const kf = {
+    score:  (a, b) => (b.score || 0) - (a.score || 0),
+    days:   (a, b) => ((b.why || {}).days || 0) - ((a.why || {}).days || 0),
+    excess: (a, b) => (b.excess || 0) - (a.excess || 0),
+  }[anSort] || ((a, b) => (b.score || 0) - (a.score || 0));
+  list.innerHTML = AN_HEAD + items.slice().sort(kf).map(anRow).join('');
+  renderAnTrk();
 }
 
 function switchTab(name) {
@@ -1913,12 +2538,14 @@ function switchTab(name) {
   document.querySelectorAll('#tabsView button').forEach(x => x.classList.toggle('on', x.dataset.v === name));
   $('#paneStock').style.display = name === 'stock' ? '' : 'none';
   $('#paneTheme').style.display = name === 'theme' ? '' : 'none';
+  $('#paneAnom').style.display = name === 'anom' ? '' : 'none';
   $('#paneTrack').style.display = name === 'track' ? '' : 'none';
   $('#paneFav').style.display = name === 'fav' ? '' : 'none';
   if (name === 'track') { renderTrack(); requestAnimationFrame(() => drawNav($('#cvNav'))); }
   else if (name === 'fav') { renderFav(); }
   else if (name === 'theme') { renderTheme(); }
-  else { redrawAll(); }
+  else if (name === 'anom') { renderAnom(); }
+  else { $('#paneStock').scrollTop = 0; redrawAll(); }
 }
 
 /* 收藏相关交互 */
@@ -2385,6 +3012,13 @@ function init() {
   const thN = ((THEME || {}).themes || []).filter(x => x.tier === 'main').length;
   const thB = $('#thBadge');
   if (thB && thN) { thB.textContent = thN; thB.style.display = ''; }
+
+  // 低位异动角标：当日首日异动只数。加首日门后清单本来就短，标"强+中"会常常是 0 或 1，
+  // 反而不如直接给总数，让用户知道今天有几只票刚从低位起第一根。
+  const anItems = ((ANOM || {}).items || []);
+  const anN = anItems.length;
+  const anB = $('#anomBadge');
+  if (anB && anN) { anB.textContent = anN; anB.style.display = ''; }
 
   // URL 支持：?d=2026-11-05 定位交易日，?code=600281 或 #600281 定位个股
   const qc = (location.search.match(/[?&]code=(\d{6})/) || [])[1]
