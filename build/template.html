@@ -1809,7 +1809,7 @@ function renderHeadTh(d) {
 }
 
 function thCard(t, isMain) {
-  const leads = (t.leaders || []).slice(0, 4);
+  const leads = (t.leaders || []).slice(0, 8);      // 全部列出，每行都可点开看 K 线
   const news = (t.titles || []).slice(0, 2);
   const hit = [t.low ? '低位' : '', t.new ? '新' : '', t.hot ? '爆发' : ''].filter(Boolean);
   return `<div class="thCard ${isMain ? 't-main' : ''}">
