@@ -28,24 +28,29 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 1/4 全市场筛选（抓东财行情）
+      - name: 1/5 全市场筛选（抓东财行情）
         run: python3 build/screen.py
 
-      - name: 2/4 收益跟踪 T+1~T+10
+      # 题材雷达是独立模块：即使资讯接口在海外受限，也不能拖垮当天的选股与部署
+      - name: 2/5 题材雷达（低位新题材 + 资讯热度 + 财务排雷）
+        continue-on-error: true
+        run: python3 build/theme_scan.py
+
+      - name: 3/5 收益跟踪 T+1~T+10
         run: python3 build/track.py
 
-      - name: 3/4 导出 CSV
+      - name: 4/5 导出 CSV
         continue-on-error: true
         run: python3 build/gen_csv.py
 
-      - name: 4/4 生成工作台页面
+      - name: 5/5 生成工作台页面
         run: python3 build/build.py
 
       - name: 提交每日数据
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A build/full build/snap build/track.json
+          git add -A build/full build/snap build/theme build/track.json
           if git diff --staged --quiet; then
             echo "数据无变化，跳过提交"
           else

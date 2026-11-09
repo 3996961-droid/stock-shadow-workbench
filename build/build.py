@@ -23,6 +23,7 @@ import json, io, os, glob, shutil
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FULL_DIR = BASE + "/build/full"
 SNAP_DIR = BASE + "/build/snap"
+THEME_DIR = BASE + "/build/theme"
 HIST_OUT = BASE + "/history"
 MAIN_OUT = BASE + "/index.html"          # 站点入口，Pages 与本地双击都用它
 
@@ -77,6 +78,19 @@ for d in pruned:
     full.pop(d, None)
 
 dates = sorted(set(full) | set(snap), reverse=True)
+
+# 题材雷达：取最新一份扫描结果（题材走实时行情，日期可能与选股日不同步）
+theme_days = sorted(os.path.basename(f)[:-5] for f in glob.glob(THEME_DIR + "/*.json"))
+theme = {}
+for day in theme_days:
+    try:
+        theme = json.load(io.open("%s/%s.json" % (THEME_DIR, day), encoding="utf-8"))
+    except Exception as e:
+        print("!! 跳过题材数据", day, e)
+if theme:
+    print("题材雷达：%s · 主推 %d 个 / 观察 %d 个"
+          % (theme.get("date"), len([x for x in theme.get("themes", []) if x.get("tier") == "main"]),
+             theme.get("counts", {}).get("watch", 0)))
 
 
 def dumps(o):
@@ -139,6 +153,7 @@ def build_page(day, inline_days, out_path):
     out = (tpl.replace("__DATA_JSON__", dumps(rows))
               .replace("__ALL_JSON__", dumps(allmap))
               .replace("__HIST_JSON__", dumps(others))
+              .replace("__THEME_JSON__", dumps(theme))
               .replace("__TRACK_JSON__", dumps(track))
               .replace("__META_JSON__", json.dumps(meta, ensure_ascii=False))
               .replace("__META_DATE__", day))
