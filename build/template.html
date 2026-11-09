@@ -398,6 +398,21 @@ select{
 .th-lead{display:flex; flex-direction:column; gap:2px; border-top:1px dashed var(--border); padding-top:6px}
 .th-lr{display:grid; grid-template-columns:66px 1fr 54px 46px 42px; gap:6px; font-size:11px; align-items:center}
 .th-lr.hd{color:var(--dim); font-size:9.5px}
+.th-lr.tk{cursor:pointer; border-radius:4px; padding:2px 3px; margin:0 -3px; transition:background .12s}
+.th-lr.tk:hover{background:rgba(90,140,255,.12)}
+.th-lr.tk:hover .n2{color:var(--accent)}
+.th-lr.tk .n2::after{content:' ›'; color:var(--dim); font-size:11px}
+.th-lr.tk:hover .n2::after{color:var(--accent)}
+.thBanner{display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:5px 10px; border-radius:6px;
+  background:rgba(232,179,57,.12); border:1px solid rgba(232,179,57,.35);
+  font-size:11px; color:var(--gold); flex:0 0 auto}
+.thBanner b{color:var(--text)}
+.thBanner button{margin-left:auto; padding:2px 8px; border-radius:4px; cursor:pointer;
+  border:1px solid rgba(232,179,57,.5); background:transparent; color:var(--gold); font-size:11px}
+.thBanner button:hover{background:rgba(232,179,57,.16)}
+.thBack{margin-left:6px; padding:1px 7px; border-radius:4px; cursor:pointer; font-size:10.5px;
+  border:1px solid var(--border); background:transparent; color:var(--muted)}
+.thBack:hover{color:var(--text); border-color:var(--muted)}
 .th-lr .cd{color:var(--muted); font-variant-numeric:tabular-nums}
 .th-lr .n2{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .th-lr .num{text-align:right; font-variant-numeric:tabular-nums}
@@ -498,6 +513,11 @@ select{
       </div>
 
       <div class="pane" id="paneStock">
+      <div class="thBanner" id="thBanner" style="display:none">
+        <span>题材个股 · <b id="thBannerName">--</b></span>
+        <span style="color:var(--dim)">不属于当日「长上影阳线」名单，K 线与分时来自题材扫描</span>
+        <button id="thBack2">← 回到题材雷达</button>
+      </div>
       <div class="card head" id="head"></div>
 
       <div class="card chart-card trend-card">
@@ -643,7 +663,7 @@ const fmtCap = v => !v ? '--' : (v >= 1e12 ? (v / 1e12).toFixed(2) + '万亿'
 const fmtAmt = v => !v ? '--' : (v >= 1e8 ? (v / 1e8).toFixed(2) + '亿' : (v / 1e4).toFixed(0) + '万');
 
 const state = {tier: 'all', red: false, q: '', sort: 'shadow', sel: 0, view: [], pane: 'amt', amtMin: 0.5, tab: 'stock', cohort: 'day',
-               followFilter: true, favOnly: false, date: META.date || ''};
+               followFilter: true, favOnly: false, date: META.date || '', thRow: null};
 
 /* ---------------- 两分钟成交额 / 市值 ---------------- */
 function enrichAmt(list) {
@@ -1155,6 +1175,7 @@ function select(i, keepScroll) {
   state.sel = i;
   const d = ACTIVE[i];
   if (!d) return;
+  clearThRow();                 // 从题材个股切回选股名单
   hoverTrend = null; hoverK = null;
   document.querySelectorAll('.item').forEach(el => el.classList.toggle('on', +el.dataset.i === i));
   renderHead(d);
@@ -1200,6 +1221,7 @@ function buildTierLabels() {
 
 function setDay(date) {
   if (!date || date === state.date) return;
+  clearThRow();                             // 切换交易日时退出题材个股视图
   const ds = daysDesc();
   if (ds.indexOf(date) < 0) return;
   state.date = date;
@@ -1338,6 +1360,7 @@ $('#favOnly').addEventListener('change', e => {
 });
 
 function bindHover(cv, setter, drawer) {
+  const cur = () => state.thRow || ACTIVE[state.sel];
   cv.addEventListener('mousemove', e => {
     const g = cv._geo;
     if (!g) return;
@@ -1346,9 +1369,9 @@ function bindHover(cv, setter, drawer) {
     const i = g.step ? Math.floor((mx - g.padL) / g.step)
                      : Math.round((mx - g.padL) / (g.plotW / Math.max(1, g.n - 1)));
     setter(Math.max(0, Math.min(g.n - 1, i)));
-    drawer(cv, ACTIVE[state.sel]);
+    drawer(cv, cur());
   });
-  cv.addEventListener('mouseleave', () => { setter(null); drawer(cv, ACTIVE[state.sel]); });
+  cv.addEventListener('mouseleave', () => { setter(null); drawer(cv, cur()); });
 }
 bindHover($('#cvTrend'), v => hoverTrend = v, drawTrend);
 bindHover($('#cvK'), v => hoverK = v, drawKline);
@@ -1366,6 +1389,18 @@ document.addEventListener('keydown', e => {
 $('#tabsView').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   switchTab(b.dataset.v);
+});
+
+$('#thCards').addEventListener('click', e => {
+  const row = e.target.closest('.th-lr[data-tcode]'); if (!row) return;
+  showThemeStock(row.dataset.tcode);
+});
+
+/* 从题材个股返回题材页；头部与顶部提示条两处按钮 */
+document.addEventListener('click', e => {
+  if (!e.target.closest('#thBack, #thBack2')) return;
+  clearThRow();
+  switchTab('theme');
 });
 
 $('#thSort').addEventListener('click', e => {
@@ -1664,6 +1699,115 @@ function importFav(file) {
 /* ---------------- 题材雷达 ---------------- */
 let thSort = 'score';
 
+/* --------- 从题材卡片点进个股：看日K与分时 ---------
+   题材龙头大多不在当日选股名单里，所以不塞进 ACTIVE（否则列表、KPI、导出都会被污染），
+   而是单独挂在 state.thRow 上，右侧详情区直接复用同一套绘图函数。 */
+function findThemeLeader(code) {
+  for (const t of ((THEME && THEME.themes) || [])) {
+    const L = (t.leaders || []).find(x => String(x.code) === String(code));
+    if (L) return {L, t};
+  }
+  return null;
+}
+
+function clearThRow() {
+  if (!state.thRow) return;
+  state.thRow = null;
+  const b = $('#thBanner'); if (b) b.style.display = 'none';
+}
+
+function showThemeStock(code) {
+  const hit = findThemeLeader(code);
+  if (!hit) { alert('没有找到 ' + code + ' 的题材明细'); return; }
+  const L = hit.L, t = hit.t;
+  if (!L.daily || !L.daily.length) {
+    alert(L.name + '（' + code + '）的 K 线没有抓到。\n\n可能是抓取时接口限流，下一次运行时会自动补齐。');
+    return;
+  }
+  const last = L.daily[L.daily.length - 1] || [];
+  state.thRow = Object.assign({}, L, {
+    date: (THEME && THEME.date) || state.date,
+    amount: last[6] || 0,
+    themeName: t.name || '',
+    themeScore: t.score,
+    themeTier: t.tier,
+  });
+  switchTab('stock');
+  selectTh(state.thRow);
+}
+
+function selectTh(row) {
+  hoverTrend = null; hoverK = null;
+  document.querySelectorAll('#list .item').forEach(el => el.classList.remove('on'));
+  const b = $('#thBanner');
+  if (b) {
+    b.style.display = '';
+    const bn = $('#thBannerName');
+    if (bn) bn.textContent = row.name + '（' + row.code + '）· ' + (row.themeName || '');
+  }
+  renderHeadTh(row);
+  drawTrend($('#cvTrend'), row);
+  drawKline($('#cvK'), row);
+  $('#noteTrend').style.display = 'none';
+  $('#noteK').style.display = 'none';
+  const td = $('#trendDate'); if (td) td.textContent = row.date || '';
+}
+
+function renderHeadTh(d) {
+  const f = d.fin || {};
+  const risk = d.risk || {hard: [], soft: []};
+  const B = d.daily || [];
+  const n = B.length;
+  const chg5 = n >= 6 ? (B[n - 1][4] / B[n - 6][4] - 1) * 100 : 0;
+  const chg20 = n >= 21 ? (B[n - 1][4] / B[n - 21][4] - 1) * 100 : 0;
+  const pct = v => (v == null ? '--' : v.toFixed(1) + '%');
+  const riskTag = risk.hard.length
+    ? `<span class="tag hot">硬雷：${risk.hard.join('、')}</span>`
+    : (risk.soft.length ? `<span class="tag">注意：${risk.soft.join('、')}</span>`
+                        : '<span class="tag ok">未发现风险项</span>');
+  $('#head').innerHTML = `
+    <div class="hname">
+      <div class="t1"><h2>${d.name}</h2><span class="code">${d.code} · ${d.mkt || ''}</span>
+        <button class="favBtn ${isFav(d.code) ? 'on' : ''}" data-fav="${d.code}"
+          title="加入收藏后按当日收盘价跟踪后续涨跌">${isFav(d.code) ? '★ 已收藏' : '☆ 收藏'}</button>
+        <button class="thBack" id="thBack">← 返回题材雷达</button></div>
+      <div class="tags">
+        <span class="tag hot">题材：${d.themeName || '--'}</span>
+        <span class="tag">${d.date} 收盘</span>
+        <span class="tag">龙头 ${(d.lead || 0).toFixed(0)} · 核心 ${(d.core || 0).toFixed(0)}</span>
+        ${riskTag}
+        <span class="tag">不在长上影选股名单内</span>
+      </div>
+    </div>
+    <div class="hprice">
+      <span class="p">${nf(d.price)}</span>
+      <span class="c ${dirCls(d.chg)}">${signed(d.chg)}</span>
+    </div>
+    <div class="metrics">
+      <div class="metric"><span>换手</span><b>${(d.turn || 0).toFixed(2)}%</b></div>
+      <div class="metric"><span>总市值</span><b style="font-size:13px">${fmtCap(d.mcap)}</b></div>
+      <div class="metric"><span>流通市值</span><b style="font-size:13px">${fmtCap(d.fmcap)}</b></div>
+      <div class="metric"><span>主力净流入</span><b class="${dirCls(d.netIn)}" style="font-size:13px">${fmtAmt(d.netIn)}</b></div>
+      <div class="metric"><span>近5日</span><b class="${dirCls(chg5)}">${signed(chg5)}</b></div>
+      <div class="metric"><span>近20日</span><b class="${dirCls(chg20)}">${signed(chg20)}</b></div>
+      <div class="metric"><span>毛利率</span><b>${pct(f.gross)}</b></div>
+      <div class="metric"><span>ROE</span><b>${pct(f.roe)}</b></div>
+      <div class="metric"><span>营收同比</span><b class="${dirCls(f.revG)}">${pct(f.revG)}</b></div>
+    </div>`;
+
+  const lines = [];
+  if (f.period) lines.push(`财务口径 <b>${f.period}</b>：毛利率 ${pct(f.gross)}、ROE ${pct(f.roe)}、资产负债率 ${pct(f.debt)}、营收同比 ${pct(f.revG)}、净利润同比 ${pct(f.npG)}。`);
+  lines.push(risk.hard.length
+    ? `<span class="warn">⚠ 命中硬雷（${risk.hard.join('、')}），本应剔除，此处仅因题材归属而展示</span>`
+    : (risk.soft.length
+        ? `<span class="warn">风险提示：${risk.soft.join('、')}</span>` : '财务排雷：未发现业绩预亏、连续亏损、高负债、现金流转负、大股东减持等风险项。'));
+  lines.push(`<div style="margin-top:3px;color:var(--dim);font-size:10.5px">该股不属于当日「长上影阳线」筛选结果，是从题材雷达跳转查看；数据来源 东方财富行情接口 · 截至 ${d.date} 收盘 · 仅供研究复盘，不构成投资建议</div>`);
+  $('#forma').innerHTML = lines.join('<div style="margin-top:3px"></div>');
+  const pre = d.preClose || (n >= 2 ? B[n - 2][4] : null);
+  $('#preTxt').textContent = '昨收 ' + nf(pre);
+  $('#amtTxt').textContent = fmtAmt(d.amount);
+}
+
 function thCard(t, isMain) {
   const leads = (t.leaders || []).slice(0, 4);
   const news = (t.titles || []).slice(0, 2);
@@ -1688,7 +1832,8 @@ function thCard(t, isMain) {
       `<div title="${a.t}"><i>${(a.d || '').slice(5)}</i>${a.t}</div>`).join('')}</div>` : ''}
     <div class="th-lead">
       <div class="th-lr hd"><span>代码</span><span>公司</span><span class="num">涨幅</span><span class="num">龙头</span><span class="num">核心</span></div>
-      ${leads.length ? leads.map(L => `<div class="th-lr">
+      ${leads.length ? leads.map(L => `<div class="th-lr tk" data-tcode="${L.code}" data-tname="${t.name}"
+        title="点击查看 ${L.name} 的日K线与分时图">
         <span class="cd">${L.code}</span>
         <span class="n2">${L.name}${(L.risk && L.risk.soft && L.risk.soft.length)
           ? ` <i class="th-risk" title="风险：${L.risk.soft.join('、')}">${L.risk.soft.length}险</i>` : ''}</span>
@@ -2142,6 +2287,7 @@ if (document.querySelector('#trendDate')) {
 
 function redrawAll() {
   renderList();
+  if (state.thRow) { selectTh(state.thRow); return; }   // 正在看题材个股
   const d = ACTIVE[state.sel]; if (!d) return;
   renderHead(d); drawTrend($('#cvTrend'), d); drawKline($('#cvK'), d);
 }
@@ -2150,6 +2296,7 @@ let rz;
 const ro = new ResizeObserver(() => {
   if (rz) cancelAnimationFrame(rz);
   rz = requestAnimationFrame(() => {
+    if (state.thRow) { drawTrend($('#cvTrend'), state.thRow); drawKline($('#cvK'), state.thRow); return; }
     const d = ACTIVE[state.sel]; if (!d) return;
     drawTrend($('#cvTrend'), d); drawKline($('#cvK'), d);
   });

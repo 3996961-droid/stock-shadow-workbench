@@ -211,6 +211,46 @@ def fetch_members(code):
     return out
 
 
+# ---------------- 4.5 龙头图表（供页面点击查看 K 线 / 分时） ----------------
+def stock_charts(code, bars=80):
+    """补抓单只股票的日K与当日分时，字段结构与 screen.py 完全一致，
+    这样前端可以直接复用同一套绘图函数。"""
+    sid = ("1." if code.startswith("6") else "0.") + code
+    u = ("https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=%s"
+         "&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57"
+         "&klt=101&fqt=0&beg=0&end=20500101&lmt=120" % sid)
+    daily = []
+    for line in ((jget(u).get("data") or {}).get("klines") or []):
+        p = line.split(",")
+        try:
+            # [日期, 开, 高, 低, 收, 量, 额]
+            daily.append([p[0], round(float(p[1]), 2), round(float(p[3]), 2),
+                          round(float(p[4]), 2), round(float(p[2]), 2),
+                          round(float(p[5]), 1), round(float(p[6]), 0)])
+        except Exception:
+            continue
+    if len(daily) < 25:
+        return None
+
+    u2 = ("https://push2his.eastmoney.com/api/qt/stock/trends2/get?secid=%s"
+          "&fields1=f1,f2,f3,f4,f5,f6,f7,f8&fields2=f51,f52,f53,f54,f55,f56,f57,f58"
+          "&iscr=0&ndays=1" % sid)
+    td = (jget(u2).get("data") or {})
+    trend = []
+    for line in (td.get("trends") or []):
+        p = line.split(",")
+        try:
+            # [时间(HH:MM), 价格, 均价, 量, 额]
+            trend.append([p[0][-5:], round(float(p[2]), 2), round(float(p[7]), 2),
+                          int(float(p[5])), round(float(p[6]), 0)])
+        except Exception:
+            continue
+    pre = td.get("preClose")
+    return {"daily": daily[-bars:], "trend": trend,
+            "preClose": round(float(pre), 2) if pre else None,
+            "secid": sid, "mkt": "沪市" if code.startswith("6") else "深市"}
+
+
 # ---------------- 5. 财务与排雷 ----------------
 def dcget(report, filt, size=1, sort=None):
     u = ("https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=%s&columns=ALL"
@@ -461,6 +501,27 @@ def main():
                         for x in leads if x["risk"]["hard"]]
         t["leaders"] = clean
         time.sleep(0.1)
+
+    # 只给主推题材的龙头补抓图表：页面只在这些卡片上展示个股明细，
+    # 每只约 12KB（80 根日K + 当日分时），主推通常只有个位数题材，体积可控。
+    tg, seen = [], set()
+    for t in deep:
+        if t.get("tier") != "main":
+            continue
+        for L in (t.get("leaders") or []):
+            if L["code"] not in seen:
+                seen.add(L["code"])
+                tg.append(L)
+    if tg:
+        print("   为主推的 %d 只龙头补抓日K与分时 ..." % len(tg))
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            charts = list(ex.map(lambda L: stock_charts(L["code"]), tg))
+        ok = 0
+        for L, ch in zip(tg, charts):
+            if ch:
+                L.update(ch)
+                ok += 1
+        print("   图表抓取成功 %d / %d" % (ok, len(tg)))
 
     out = {
         "date": now.strftime("%Y-%m-%d"),
