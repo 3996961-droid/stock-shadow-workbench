@@ -565,6 +565,43 @@ select{
 .anTrkGrp.on{background:var(--panel3); border-radius:6px 6px 0 0}
 .anTrkGrp.on b::after{content:" · 当前查看"; font-size:9.5px; color:var(--accent); font-weight:400}
 
+/* ---------------- 跨日对比 ---------------- */
+/* 单日清单只能回答"今天谁在动"，看不出"这件事已经动了几天"。
+   两栏并排：左=仍在延续的，右=已经退出的，一眼能看出是扩散还是收敛。 */
+.xBody{padding:0 10px 9px; display:grid; grid-template-columns:1fr 1fr; gap:0 18px; align-items:start}
+.xBody.one{grid-template-columns:1fr}
+@media (max-width:1240px){.xBody{grid-template-columns:1fr}}
+.xCol{min-width:0; display:flex; flex-direction:column}
+.xCol h5{margin:7px 0 3px; font-size:10.5px; color:var(--muted); font-weight:600;
+  display:flex; align-items:baseline; gap:6px; white-space:nowrap; overflow:hidden}
+.xCol h5 i{font-style:normal; font-size:9.5px; color:var(--dim); font-weight:400;
+  overflow:hidden; text-overflow:ellipsis; min-width:0}
+.xRow{display:flex; align-items:center; gap:8px; height:26px; font-size:11px; color:var(--muted);
+  border-bottom:1px solid rgba(128,128,128,.08); font-variant-numeric:tabular-nums}
+.xRow.hd{height:19px; font-size:9.5px; color:var(--dim); border-bottom:1px solid var(--border)}
+.xRow.hd .w{color:var(--dim)}
+.xRow .nm{flex:1 1 auto; min-width:0; color:var(--text); font-weight:600;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.xRow.hd .nm{color:var(--dim); font-weight:400}
+.xRow .nm em{font-style:normal; font-weight:400; font-size:9.5px; color:var(--dim); margin-left:4px}
+.xRow .v{flex:0 0 46px; display:flex; justify-content:center}
+.xRow .w{flex:0 0 158px; text-align:right; color:var(--muted); white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis}
+.xRow .w b{font-weight:600}
+.xChip{font-size:9px; padding:0 5px; border-radius:4px; line-height:15px; height:15px; white-space:nowrap}
+.xChip.hot{background:rgba(240,74,91,.16); color:var(--up)}
+.xChip.cool{background:rgba(46,160,110,.16); color:var(--down)}
+.xChip.mut{background:var(--panel3); color:var(--dim)}
+.xChip.new{background:rgba(77,141,255,.14); color:var(--accent)}
+.xEmpty{font-size:10.5px; color:var(--dim); line-height:1.6; padding:7px 0 3px; font-style:italic}
+/* 题材页也改成整页滚动：跨日对比插进来后，不能再靠压缩主推卡片腾地方 */
+#paneTheme{overflow-y:auto; overflow-x:hidden; padding-right:2px;
+  scrollbar-width:thin; overscroll-behavior:contain}
+#paneTheme > .card,#paneTheme > .cbar,#paneTheme > .tkNote,#paneTheme > .thCards{flex:0 0 auto}
+#paneTheme::-webkit-scrollbar{width:8px}
+#paneTheme::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+#paneTheme::-webkit-scrollbar-track{background:transparent}
+
 /* 题材雷达 / 低位异动的日期回看：沿用图表上 .daywrap 那套下拉样式 */
 #paneTheme .hname .t1,#paneAnom .hname .t1{align-items:center; flex-wrap:wrap}
 #paneTheme .daywrap,#paneAnom .daywrap{margin-left:2px}
@@ -830,7 +867,13 @@ select{
         </div>
         <div class="thCards" id="thCards"></div>
 
-        <div class="card" style="flex:1;min-height:150px;display:flex;flex-direction:column;overflow:hidden">
+        <div class="card" id="thCrossBox" style="display:none">
+          <div class="cbar"><b>跨日对比</b><span id="thCrossDesc"></span>
+            <span style="margin-left:auto;font-size:10.5px;color:var(--dim)" id="thCrossMeta"></span></div>
+          <div class="xBody" id="thCrossBody"></div>
+        </div>
+
+        <div class="card" style="flex:0 0 auto;height:clamp(228px,34vh,360px);display:flex;flex-direction:column;overflow:hidden">
           <div class="cbar"><b>观察池</b><span id="thWatchDesc"></span>
             <div class="paneSeg" id="thSort">
               <button data-s="score" class="on">综合分</button>
@@ -869,6 +912,12 @@ select{
         </div>
         <div class="anList" id="anList"></div>
 
+        <div class="card" id="anCrossBox" style="display:none">
+          <div class="cbar"><b>跨日延续</b><span id="anCrossDesc"></span>
+            <span style="margin-left:auto;font-size:10.5px;color:var(--dim)" id="anCrossMeta"></span></div>
+          <div class="xBody" id="anCrossBody"></div>
+        </div>
+
         <div class="card" id="anTrkBox" style="display:flex;flex-direction:column;min-height:0">
           <div class="cbar"><b>T+1 ~ T+5 收益跟踪</b><span id="anTrkDesc"></span>
             <span style="margin-left:auto;font-size:10.5px;color:var(--dim)" id="anTrkMeta"></span></div>
@@ -902,6 +951,9 @@ const $ = s => document.querySelector(s);
 const nf = (v, d = 2) => (v == null || isNaN(v)) ? '--' : v.toLocaleString('zh-CN', {minimumFractionDigits: d, maximumFractionDigits: d});
 const signed = (v, d = 2) => (v > 0 ? '+' : '') + v.toFixed(d) + '%';
 const dirCls = v => v > 0.0001 ? 'up' : (v < -0.0001 ? 'down' : 'flat');
+// 跨日对比的窗口长度（交易日）。放在这里是因为 renderAnom 的说明文案也要引用它，
+// 定义在下方函数区会踩 const 的暂时性死区，初始化渲染时直接 ReferenceError
+const XSPAN = 6;
 const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const fmtCap = v => !v ? '--' : (v >= 1e12 ? (v / 1e12).toFixed(2) + '万亿'
                  : v >= 1e8 ? (v / 1e8).toFixed(v >= 1e10 ? 0 : 1) + '亿' : (v / 1e4).toFixed(0) + '万');
@@ -2273,6 +2325,7 @@ function renderTheme() {
     $('#thMainDesc').textContent = '';
     $('#thParams').textContent = '';
     $('#thCatBox').style.display = 'none';
+    $('#thCrossBox').style.display = 'none';
     cards.innerHTML = '<div class="th-none">还没有题材扫描结果。<br>扫描脚本跑完并重新构建页面后，这里会显示低位新题材。</div>';
     table.innerHTML = '';
     $('#thWatchDesc').textContent = '';
@@ -2331,6 +2384,7 @@ function renderTheme() {
         <span style="color:var(--muted)">${hit || '—'}</span>
       </div>`;
     }).join('');
+  renderThCross();
   syncBadges();
 }
 
@@ -2518,6 +2572,191 @@ function renderAnTrk() {
     + (c.items || []).map(anTrkRow).join('')).join('');
 }
 
+/* ---------------- 跨日对比 ----------------
+   单日清单只能回答"今天谁在动"，看不出"这件事已经动了几天"。把窗口内几天并排看：
+   ① 板块连续出异动 —— 个股受首日门限制，同一只票很难连续两天过门（第二天它的前 5 日已含前一日涨停），
+      板块不受这个限制。同一板块连续两天都有票涨停，说明资金在同一处反复找标的，比单日涨停更有指向性。
+   ② 个股反复上榜 —— 只有"涨一波 → 放量洗盘 → 再启动"才可能第二次过首日门，一旦出现基本是二波。
+   ③ 题材分数变化 —— 连续抬升是升温，主推掉到观察是退潮；这个对比比单日分数更有信息量。 */
+// 属性型板块（高市净率、深股通这类）不是题材，混进跨日统计会造出假信号
+const XB_NOISE = /高市净率|低市净率|高市盈率|破净|深股通|沪股通|融资融券|转债|专精特新|股权激励|预盈预增|参股|举牌|壳资源|ST板块|昨日涨停/;
+
+function xDays(map, upto) {
+  return Object.keys(map || {})
+    .filter(d => map[d] && (!upto || d <= upto))
+    .sort().slice(-XSPAN);
+}
+
+// 从窗口最后一天往前数，连续出现在集合里的天数
+function xStreak(set, days) {
+  let n = 0;
+  for (let i = days.length - 1; i >= 0; i--) { if (set.has(days[i])) n++; else break; }
+  return n;
+}
+
+function xSpan(days) {
+  return days[0].slice(5) + '~' + days[days.length - 1].slice(5);
+}
+
+/* ---- 低位异动：板块连续性 + 个股重复上榜 ---- */
+function renderAnCross() {
+  const box = $('#anCrossBody'), wrap = $('#anCrossBox');
+  if (!box || !wrap) return;
+  const days = xDays(ANOMDAYS, anDate);
+  wrap.style.display = '';
+  $('#anCrossDesc').textContent = days.length >= 2
+    ? `最近 ${days.length} 个交易日 · ${xSpan(days)}` : (days[0] || '');
+  if (days.length < 2) {
+    box.className = 'xBody one';
+    box.innerHTML = `<div class="xEmpty">跨日对比至少要两个交易日的数据，当前只有 ${days[0] || '--'} 一天。
+      明天收盘后这里会给出两类信号：哪个板块连续两天都有票异动、哪只票第二次过首日门。</div>`;
+    $('#anCrossMeta').textContent = '';
+    return;
+  }
+
+  const bd = {}, st = {};
+  days.forEach(d => (ANOMDAYS[d].items || []).forEach(it => {
+    const bn = String((it.board || {}).name || '').trim();
+    if (bn && !XB_NOISE.test(bn)) {
+      (bd[bn] = bd[bn] || { name: bn, hits: [] }).hits.push({ d, name: it.name, chg: it.chg || 0 });
+    }
+    (st[it.code] = st[it.code] || { code: it.code, name: it.name, hits: [] })
+      .hits.push({ d, chg: it.chg || 0 });
+  }));
+
+  // 只留真正跨日连续的板块：同一天出两只票属于板块内部普涨，不是「跨日延续」，混进来只会稀释信号
+  const boards = Object.keys(bd).map(k => {
+    const o = bd[k];
+    return { name: o.name, hits: o.hits, n: o.hits.length,
+             streak: xStreak(new Set(o.hits.map(h => h.d)), days) };
+  }).filter(o => o.streak >= 2)
+    .sort((a, b) => b.streak - a.streak || b.n - a.n || a.name.localeCompare(b.name, 'zh'));
+
+  const stocks = Object.values(st).filter(o => o.hits.length >= 2)
+    .sort((a, b) => b.hits.length - a.hits.length || a.name.localeCompare(b.name, 'zh'));
+
+  const bRows = boards.length ? boards.slice(0, 7).map(o => {
+    const seq = o.hits.map(h => `${h.d.slice(5)} ${h.name}`).join(' · ');
+    const chip = o.streak >= 2 ? `<span class="xChip hot">连${o.streak}天</span>`
+                               : `<span class="xChip mut">${o.n}次</span>`;
+    const tip = o.hits.map(h => `${h.d}  ${h.name}  ${signed(h.chg)}`).join('&#10;');
+    return `<div class="xRow" title="${tip}"><span class="nm">${o.name}</span>
+      <span class="v">${chip}</span><span class="w">${seq}</span></div>`;
+  }).join('') : `<div class="xEmpty">窗口内没有板块连着两天出异动 —— 钱比较散，一天换一个地方。</div>`;
+
+  const sRows = stocks.length ? stocks.slice(0, 7).map(o => {
+    const seq = o.hits.map(h => `${h.d.slice(5)} ${signed(h.chg)}`).join(' · ');
+    const tip = o.hits.map(h => `${h.d}  ${signed(h.chg)}`).join('&#10;');
+    return `<div class="xRow" title="${tip}"><span class="nm">${o.name}<em>${o.code}</em></span>
+      <span class="v"><span class="xChip hot">${o.hits.length}次</span></span>
+      <span class="w">${seq}</span></div>`;
+  }).join('') : `<div class="xEmpty">窗口内没有个股重复上榜。首日门本身就挡掉了连涨票，能第二次进来的基本是洗盘后的二波。</div>`;
+
+  box.className = 'xBody';
+  box.innerHTML = `
+    <div class="xCol"><h5>板块连续出异动 <i>个股过不了首日门，板块没这个限制</i></h5>
+      <div class="xRow hd"><span class="nm">板块</span><span class="v"></span><span class="w">各日异动票</span></div>
+      ${bRows}</div>
+    <div class="xCol"><h5>个股重复上榜 <i>两次过首日门＝涨过一波 · 洗过盘 · 再启动</i></h5>
+      <div class="xRow hd"><span class="nm">个股</span><span class="v"></span><span class="w">各日涨幅</span></div>
+      ${sRows}</div>`;
+
+  const cont = boards.filter(o => o.streak >= 2).length;
+  $('#anCrossMeta').textContent = (boards.length || stocks.length)
+    ? `连续板块 ${cont} 个 · 重复个股 ${stocks.length} 只`
+    : '这两天没有可延续的信号';
+}
+
+/* ---- 题材雷达：分数抬升 / 退潮 / 主推掉档 ---- */
+function renderThCross() {
+  const box = $('#thCrossBody'), wrap = $('#thCrossBox');
+  if (!box || !wrap) return;
+  const days = xDays(THEMEDAYS, thDate);
+  wrap.style.display = '';
+  $('#thCrossDesc').textContent = days.length >= 2
+    ? `最近 ${days.length} 个交易日 · ${xSpan(days)}` : (days[0] || '');
+  if (days.length < 2) {
+    box.className = 'xBody one';
+    box.innerHTML = `<div class="xEmpty">跨日对比至少要两个交易日的数据，当前只有 ${days[0] || '--'} 一天。
+      明天收盘后这里会给出「分数在抬升还是在退潮」「哪个题材从主推掉到观察」。</div>`;
+    $('#thCrossMeta').textContent = '';
+    return;
+  }
+
+  const cur = days[days.length - 1], prev = days[days.length - 2];
+  // themes 数组是先主推后观察，本身不按分数排，名次要自己按分数算（榜内前 20 的口径）
+  const idx = m => {
+    const arr = (m.themes || []).slice().sort((a, b) => (b.score || 0) - (a.score || 0));
+    const r = {};
+    arr.forEach((t, i) => { r[String(t.code || t.name)] = Object.assign({ rank: i + 1 }, t); });
+    return r;
+  };
+  const C = idx(THEMEDAYS[cur]), P = idx(THEMEDAYS[prev]);
+  // 逐日分数，用来判断"连升 N 天"——只有相邻两天都在榜内才算连续，中间掉出去会断链
+  const H = {};
+  days.forEach(d => (THEMEDAYS[d].themes || []).forEach(t => {
+    const k = String(t.code || t.name);
+    (H[k] = H[k] || {})[d] = t.score || 0;
+  }));
+  const chainN = (k, dir) => {
+    const m = H[k] || {};
+    let n = 0;
+    for (let i = days.length - 1; i > 0; i--) {
+      const a = m[days[i]], b = m[days[i - 1]];
+      if (a == null || b == null) break;
+      if (dir > 0 ? a > b : a < b) n++; else break;
+    }
+    return n;
+  };
+  const tag = r => {
+    if (!r.p) return '<span class="xChip new">新进</span>';
+    if (r.p.tier === 'main' && r.c.tier !== 'main') return '<span class="xChip cool">主推→观察</span>';
+    if (r.c.tier === 'main' && r.p.tier !== 'main') return '<span class="xChip hot">升入主推</span>';
+    const upN = chainN(r.k, 1), dnN = chainN(r.k, -1);
+    if (upN >= 2) return `<span class="xChip hot">连升${upN}天</span>`;
+    if (dnN >= 2) return `<span class="xChip cool">连降${dnN}天</span>`;
+    const dv = (r.c.score || 0) - (r.p.score || 0);
+    const dvt = (dv > 0 ? '+' : '') + dv.toFixed(1);
+    if (dv >= 4) return `<span class="xChip hot">升温 ${dvt}</span>`;
+    if (dv <= -4) return `<span class="xChip cool">退潮 ${dvt}</span>`;
+    return '<span class="xChip mut">持平</span>';
+  };
+  const rows = Object.keys(C).map(k => ({ k, name: C[k].name, c: C[k], p: P[k] || null }))
+    .sort((a, b) => a.c.rank - b.c.rank);
+
+  const cRows = rows.slice(0, 8).map(r => {
+    const w = r.p
+      ? `#${r.c.rank} · 24h ${r.p.h24 || 0}→${r.c.h24 || 0}`
+      : `#${r.c.rank} · 24h ${r.c.h24 || 0}`;
+    const tip = r.p
+      ? `${cur} 分数 ${r.c.score.toFixed(1)}（#${r.c.rank}）&#10;${prev} 分数 ${r.p.score.toFixed(1)}（#${r.p.rank}）`
+      : `${cur} 首次进入前 20，分数 ${r.c.score.toFixed(1)}`;
+    return `<div class="xRow" title="${tip}"><span class="nm">${r.name}</span>
+      <span class="v">${tag(r)}</span><span class="w">${w}</span></div>`;
+  }).join('');
+
+  const gone = Object.keys(P).filter(k => !C[k]).map(k => P[k])
+    .sort((a, b) => b.score - a.score);
+  const gRows = gone.length ? gone.slice(0, 8).map(t => {
+    const w = `#${t.rank} · 24h ${t.h24 || 0}`;
+    return `<div class="xRow" title="${prev} 分数 ${t.score.toFixed(1)}，${cur} 已跌出前 20"><span class="nm">${t.name}</span>
+      <span class="v"><span class="xChip cool">跌出</span></span><span class="w">${w}</span></div>`;
+  }).join('') : `<div class="xEmpty">前 20 全部守住，没有题材跌出去 —— 榜内结构稳定。</div>`;
+
+  box.className = 'xBody';
+  box.innerHTML = `
+    <div class="xCol"><h5>${cur} 前 8 <i>对比 ${prev} 的分数与榜内名次</i></h5>
+      <div class="xRow hd"><span class="nm">题材</span><span class="v">变化</span><span class="w">名次 · 24h 热度</span></div>
+      ${cRows}</div>
+    <div class="xCol"><h5>${prev} 在榜、${cur} 跌出前 20 <i>退潮往往先从前排消失</i></h5>
+      <div class="xRow hd"><span class="nm">题材</span><span class="v"></span><span class="w">昨日名次 · 热度</span></div>
+      ${gRows}</div>`;
+
+  const up = rows.filter(r => r.p && r.c.score - r.p.score >= 4).length;
+  const down = rows.filter(r => r.p && r.c.score - r.p.score <= -4).length;
+  $('#thCrossMeta').textContent = `升温 ${up} 个 · 退潮 ${down} 个 · 跌出 ${gone.length} 个`;
+}
+
 function renderAnom() {
   syncDayPick('anom');
   const list = $('#anList');
@@ -2531,6 +2770,7 @@ function renderAnom() {
     $('#anMeta').innerHTML = '';
     $('#anDesc').textContent = '';
     $('#anPolBox').style.display = 'none';
+    $('#anCrossBox').style.display = 'none';
     $('#anNote').innerHTML = '';
     $('#anTrkBox').style.display = 'none';
     list.innerHTML = '<div class="anEmpty">还没有扫描结果。<br>低位异动脚本跑完并重新构建页面后，这里会显示"当天首日放量异动、低位、且与板块背离"的票。</div>';
@@ -2583,7 +2823,9 @@ function renderAnom() {
     <br><b>政府背书是本模块的第一权重</b>：只认省部级以上正式文件、会议、领导表态与国家级工程立项，券商研报、行业媒体评论、企业自宣一律不计入背书层级；背书层级越高、文件越"实"（有明确目标与时间表），持续窗口给得越长。
     <br><b>持续时间</b>＝事件类别基础窗口 × 级别加成 × 新鲜度衰减，另加「可验证性 +1 天、有明确后续节点 +2 天」。它衡量的是<b>这条消息还能被市场反复谈论多久</b>，不是涨跌预测，也不构成买卖建议。
     <br><b>点一行看什么</b>：清单只放能横向比的数字，点开个股页会给出完整主因、五路证据（个股 / 板块 / 政策 / 新闻联播 / 韭研点名）与持续性推算，K 线和分时也在同一页。
-    <br><b>找不到消息是正常的</b>：首日异动时消息面常常还没起来（像 10-28 的西部材料，缩量涨 7.9% 而当天没有任何报道，两天后才等到新闻联播）。这类票要按"资金抢跑"看，别硬套题材。</div></details>`;
+    <br><b>找不到消息是正常的</b>：首日异动时消息面常常还没起来（像 10-28 的西部材料，缩量涨 7.9% 而当天没有任何报道，两天后才等到新闻联播）。这类票要按"资金抢跑"看，别硬套题材。
+    <br><b>清单下方的「跨日延续」</b>：把最近 ${XSPAN} 个交易日排在一起看两件事 —— ① <b>同一板块连着几天出异动票</b>。个股受首日门限制很难连续两天过门（第二天它的前 5 日已含前一日涨停），板块没有这个限制，所以板块连续性更能说明资金在同一处反复找标的；② <b>同一只票第二次上榜</b>，那基本等于"涨一波 → 放量洗盘 → 再启动"的二波。反过来，如果这几天板块各不重复、个股也没有第二次，说明钱很散，一天换一个地方，行情没有主线。
+    <br><b>题材雷达那边的跨日对比要一起看</b>：题材分数看的是板块指数热度和资讯量，异动看的是个股。出现「题材分数掉档、但板块连续两天有票涨停」这种背离时，说明钱在个股不在板块 —— 这时候盯个股比盯题材有用。</div></details>`;
   // 注意：比较器必须同时用到两个参数，单参箭头（t => -t.score）会忽略 b，排序结果不可靠
   const kf = {
     score:  (a, b) => (b.score || 0) - (a.score || 0),
@@ -2591,6 +2833,7 @@ function renderAnom() {
     excess: (a, b) => (b.excess || 0) - (a.excess || 0),
   }[anSort] || ((a, b) => (b.score || 0) - (a.score || 0));
   list.innerHTML = AN_HEAD + items.slice().sort(kf).map(anRow).join('');
+  renderAnCross();
   renderAnTrk();
   syncBadges();
 }
