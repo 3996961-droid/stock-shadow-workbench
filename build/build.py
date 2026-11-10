@@ -33,14 +33,16 @@ KEEP_FULL = 60                  # 完整图表明细保留最近 N 个交易日�
 
 tpl = io.open(BASE + "/build/template.html", encoding="utf-8").read()
 
-# 当期明细：本地有 data.json 就用它；云端仓库里不存这个中间文件，直接取完整明细的最新一日
+# 当期明细：以 build/full 里最新的交易日为准。
+# 不能反过来信 build/data.json 的 date —— 那个文件不进版本库，本地容易残留旧副本，
+# 一旦它比 full 旧，页面主视角就会停在前一个交易日（云端没有该文件，所以只在本地出错，更难发现）。
 snap_files = sorted(glob.glob(FULL_DIR + "/*.json"), reverse=True)
-if os.path.exists(BASE + "/build/data.json"):
-    data = json.load(io.open(BASE + "/build/data.json", encoding="utf-8"))
-    latest = data[0].get("date") or ""
-elif snap_files:
+if snap_files:
     latest = os.path.basename(snap_files[0])[:-5]
     data = json.load(io.open(snap_files[0], encoding="utf-8"))
+elif os.path.exists(BASE + "/build/data.json"):
+    data = json.load(io.open(BASE + "/build/data.json", encoding="utf-8"))
+    latest = data[0].get("date") or ""
 else:
     raise SystemExit("!! build/full 为空，请先运行 build/screen.py")
 
@@ -80,31 +82,42 @@ for d in pruned:
 
 dates = sorted(set(full) | set(snap), reverse=True)
 
-# 题材雷达：取最新一份扫描结果（题材走实时行情，日期可能与选股日不同步）
+# 题材雷达：注入最近若干天，页面可按日期回看（单日约 100KB，12 天约 1.2MB）
+THEME_KEEP = 12
+theme_map = {}
 theme_days = sorted(os.path.basename(f)[:-5] for f in glob.glob(THEME_DIR + "/*.json"))
-theme = {}
-for day in theme_days:
+for day in theme_days[-THEME_KEEP:]:
     try:
-        theme = json.load(io.open("%s/%s.json" % (THEME_DIR, day), encoding="utf-8"))
+        theme_map[day] = json.load(io.open("%s/%s.json" % (THEME_DIR, day), encoding="utf-8"))
     except Exception as e:
         print("!! 跳过题材数据", day, e)
+theme = theme_map[max(theme_map)] if theme_map else {}
 if theme:
-    print("题材雷达：%s · 主推 %d 个 / 观察 %d 个"
+    print("题材雷达：%s · 主推 %d 个 / 观察 %d 个（可回看 %d 天）"
           % (theme.get("date"), len([x for x in theme.get("themes", []) if x.get("tier") == "main"]),
-             theme.get("counts", {}).get("watch", 0)))
+             theme.get("counts", {}).get("watch", 0), len(theme_map)))
 
 
-# 低位异动：同样取最新一份
+# 低位异动：同样注入多日。单日含日K与分时约 150KB，超过 ANOM_HEAVY 天的更早日期
+# 只保留清单字段（去掉 daily/trend），避免页面无限膨胀
+ANOM_KEEP, ANOM_HEAVY = 12, 6
+anom_map = {}
 anom_days = sorted(os.path.basename(f)[:-5] for f in glob.glob(ANOM_DIR + "/*.json"))
-anom = {}
-for day in anom_days:
+for i, day in enumerate(anom_days[-ANOM_KEEP:]):
     try:
-        anom = json.load(io.open("%s/%s.json" % (ANOM_DIR, day), encoding="utf-8"))
+        obj = json.load(io.open("%s/%s.json" % (ANOM_DIR, day), encoding="utf-8"))
     except Exception as e:
         print("!! 跳过异动数据", day, e)
+        continue
+    if i < len(anom_days[-ANOM_KEEP:]) - ANOM_HEAVY:
+        for it in obj.get("items") or []:
+            it.pop("daily", None)
+            it.pop("trend", None)
+    anom_map[day] = obj
+anom = anom_map[max(anom_map)] if anom_map else {}
 if anom:
-    print("低位异动：%s · %d 只"
-          % (anom.get("date"), len(anom.get("items") or [])))
+    print("低位异动：%s · %d 只（可回看 %d 天）"
+          % (anom.get("date"), len(anom.get("items") or []), len(anom_map)))
 
 # 异动名单的 T+1~T+5 收益台账（跨批次，由 anom_track.py 生成）
 atrack_path = BASE + "/build/anomtrack.json"
@@ -178,6 +191,8 @@ def build_page(day, inline_days, out_path):
     out = (tpl.replace("__DATA_JSON__", dumps(rows))
               .replace("__ALL_JSON__", dumps(allmap))
               .replace("__HIST_JSON__", dumps(others))
+              .replace("__THEMEDAYS_JSON__", dumps(theme_map))
+              .replace("__ANOMDAYS_JSON__", dumps(anom_map))
               .replace("__THEME_JSON__", dumps(theme))
               .replace("__ANOM_JSON__", dumps(anom))
               .replace("__ANOMTRACK_JSON__", dumps(atrack))

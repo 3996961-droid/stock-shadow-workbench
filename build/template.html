@@ -561,6 +561,14 @@ select{
 .anTrkGrp .av b.up{color:var(--up)}
 .anTrkGrp .av b.down{color:var(--down)}
 .anTrkGrp .sp{margin-left:auto; font-variant-numeric:tabular-nums}
+/* 与上方日期下拉选中的批次对应，方便一眼对上 */
+.anTrkGrp.on{background:var(--panel3); border-radius:6px 6px 0 0}
+.anTrkGrp.on b::after{content:" · 当前查看"; font-size:9.5px; color:var(--accent); font-weight:400}
+
+/* 题材雷达 / 低位异动的日期回看：沿用图表上 .daywrap 那套下拉样式 */
+#paneTheme .hname .t1,#paneAnom .hname .t1{align-items:center; flex-wrap:wrap}
+#paneTheme .daywrap,#paneAnom .daywrap{margin-left:2px}
+#paneTheme .daywrap select,#paneAnom .daywrap select{padding:3px 6px; font-size:11px}
 .anTrkHd,.anTrkRow{display:grid; gap:6px; align-items:center; padding:0 5px;
   grid-template-columns:128px 92px 58px repeat(5,58px) 96px}
 .anTrkHd{height:22px; font-size:9.5px; color:var(--dim); letter-spacing:.2px;
@@ -804,7 +812,8 @@ select{
       <div class="pane" id="paneTheme" style="display:none">
         <div class="card head">
           <div class="hname">
-            <div class="t1"><h2 style="font-size:17px">题材雷达</h2><span class="code" id="thScope">低位 · 新题材 · 信息爆发</span></div>
+            <div class="t1"><h2 style="font-size:17px">题材雷达</h2><span class="code" id="thScope">低位 · 新题材 · 信息爆发</span>
+              <span class="daywrap" id="thDayWrap" style="display:none"><select id="thDateSel"></select></span></div>
             <div class="tags" id="thMeta"></div>
           </div>
           <div class="tkKpis" id="thKpis"></div>
@@ -838,7 +847,8 @@ select{
       <div class="pane" id="paneAnom" style="display:none">
         <div class="card head">
           <div class="hname">
-            <div class="t1"><h2 style="font-size:17px">低位异动</h2><span class="code" id="anScope">低位 · 放量异动 · 与板块背离</span></div>
+            <div class="t1"><h2 style="font-size:17px">低位异动</h2><span class="code" id="anScope">低位 · 放量异动 · 与板块背离</span>
+              <span class="daywrap" id="anDayWrap" style="display:none"><select id="anDateSel"></select></span></div>
             <div class="tags" id="anMeta"></div>
           </div>
           <div class="tkKpis" id="anKpis"></div>
@@ -876,8 +886,11 @@ const DATA = __DATA_JSON__;      // 本页所属交易日的完整明细（含�
 const ALL = __ALL_JSON__;        // 内嵌了完整图表的交易日 {日期: [完整明细]}
 const HIST = __HIST_JSON__;      // 只有轻量明细的交易日（更早的，图表在独立页）
 const TRACK = __TRACK_JSON__;
-const THEME = __THEME_JSON__;    // 题材雷达：低位新题材扫描（可能为空对象）
-const ANOM = __ANOM_JSON__;      // 低位异动：个股低位放量 + 消息归因 + 持续性
+const THEMEDAYS = __THEMEDAYS_JSON__;  // {日期: 题材扫描}，页面按日期回看
+const ANOMDAYS = __ANOMDAYS_JSON__;    // {日期: 异动扫描}，页面按日期回看
+let THEME = __THEME_JSON__;      // 题材雷达：当前查看日的扫描结果（首次渲染取最新一天）
+let ANOM = __ANOM_JSON__;        // 低位异动：当前查看日的扫描结果
+let thDate = '', anDate = '';    // 当前查看的日期，空表示跟随最新一天
 const ATRACK = __ANOMTRACK_JSON__; // 异动名单的 T+1~T+5 收益跟踪（跨批次）
 const META = __META_JSON__;      // {date, dates[], pages{日期:相对路径}, n, core, hit, cohorts}
 
@@ -2204,7 +2217,52 @@ function renderCatalyst(CA) {
     </div>`;
 }
 
+/* ---------------- 日期回看：题材雷达 / 低位异动 ----------------
+   两个模块的扫描结果都按交易日各存一份（THEMEDAYS / ANOMDAYS，由 build.py 注入最近 12 天）。
+   页面只渲染当前选中的那一天，默认停在最新一天，切换后固定，直到下次手动改。 */
+function dayKeys(map) {
+  return Object.keys(map || {}).filter(d => map[d]).sort().reverse();
+}
+
+function syncDayPick(kind) {
+  const map = kind === 'theme' ? THEMEDAYS : ANOMDAYS;
+  const keys = dayKeys(map);
+  if (!keys.length) return '';
+  const isTh = kind === 'theme';
+  let cur = isTh ? thDate : anDate;
+  if (!cur || !map[cur]) cur = keys[0];
+  if (isTh) { thDate = cur; THEME = map[cur]; }
+  else { anDate = cur; ANOM = map[cur]; }
+  const sel = $(isTh ? '#thDateSel' : '#anDateSel');
+  const wrap = $(isTh ? '#thDayWrap' : '#anDayWrap');
+  if (sel) {
+    sel.innerHTML = keys.map(d =>
+      `<option value="${d}"${d === cur ? ' selected' : ''}>${d}</option>`).join('');
+  }
+  // 只有一天时下拉没有意义，收起来
+  if (wrap) wrap.style.display = keys.length > 1 ? '' : 'none';
+  return cur;
+}
+
+/* 页签角标跟着当前查看的日期走 */
+function syncBadges() {
+  const thN = ((THEME || {}).themes || []).filter(x => x.tier === 'main').length;
+  const thB = $('#thBadge');
+  if (thB) { thB.textContent = thN; thB.style.display = thN ? '' : 'none'; }
+  const anN = ((ANOM || {}).items || []).length;
+  const anB = $('#anomBadge');
+  if (anB) { anB.textContent = anN; anB.style.display = anN ? '' : 'none'; }
+}
+
+function bindDayPick() {
+  const t = $('#thDateSel'), a = $('#anDateSel');
+  if (t) t.addEventListener('change', e => { thDate = e.target.value; renderTheme(); });
+  if (a) a.addEventListener('change', e => { anDate = e.target.value; renderAnom(); });
+}
+bindDayPick();
+
 function renderTheme() {
+  syncDayPick('theme');
   const D = THEME || {}, all = D.themes || [], p = D.params || {};
   const cards = $('#thCards'), table = $('#thTable');
 
@@ -2273,6 +2331,7 @@ function renderTheme() {
         <span style="color:var(--muted)">${hit || '—'}</span>
       </div>`;
     }).join('');
+  syncBadges();
 }
 
 /* ---------------- 低位异动 ---------------- */
@@ -2427,7 +2486,8 @@ function anTrkGrp(c) {
     : `T+1 ~ T+${MAXD} 待填充`;
   const win = av.length ? av[av.length - 1].win : null;
   const idxs = (c.idx || []).filter(v => v != null);
-  return `<div class="anTrkGrp"><b>${c.date} 批次</b>
+  const on = (c.date === anDate) ? ' on' : '';
+  return `<div class="anTrkGrp${on}"><b>${c.date} 批次</b>
     <span>${c.n} 只 · T+${c.days} / T+${MAXD}${c.sealed ? ' · 已封存' : ''}</span>
     <span class="av">${avgTxt}</span>
     ${win != null ? `<span class="av">胜率 ${win}%</span>` : ''}
@@ -2459,6 +2519,7 @@ function renderAnTrk() {
 }
 
 function renderAnom() {
+  syncDayPick('anom');
   const list = $('#anList');
   const d = ANOM || {};
   const items = d.items || [];
@@ -2482,11 +2543,11 @@ function renderAnom() {
   const named = items.filter(x => x.named).length;
   const sneakN = items.filter(x => x.sneak === '资金抢跑').length;
 
-  // 异动只保留最近一次扫描的 JSON；切到历史交易日时会话不对，必须说清楚
+  // 异动看板按日期切换，和左栏选的交易日不一定是同一天，要说清楚
   const cur = (typeof state !== 'undefined' && state.date) || '';
-  const stale = cur && d.date && cur !== d.date;
-  $('#anScope').textContent = stale
-    ? `${d.date} 收盘的扫描结果 · 当前所选 ${cur} 没有跑过异动扫描`
+  const off = cur && d.date && cur !== d.date;
+  $('#anScope').textContent = off
+    ? `${d.date} 收盘 · 左栏当前看 ${cur}，异动看板可切日期`
     : `${d.date} 收盘 · 涨幅榜 ${c.scanned || 0} 只里筛出 ${items.length} 只当日首日异动`;
   $('#anMeta').innerHTML = `
     <span class="tag hot">只取当天首日异动</span>
@@ -2531,6 +2592,7 @@ function renderAnom() {
   }[anSort] || ((a, b) => (b.score || 0) - (a.score || 0));
   list.innerHTML = AN_HEAD + items.slice().sort(kf).map(anRow).join('');
   renderAnTrk();
+  syncBadges();
 }
 
 function switchTab(name) {
@@ -3008,17 +3070,9 @@ function init() {
   renderTrack();
   syncFavUI();
 
-  // 题材雷达角标：主推数量
-  const thN = ((THEME || {}).themes || []).filter(x => x.tier === 'main').length;
-  const thB = $('#thBadge');
-  if (thB && thN) { thB.textContent = thN; thB.style.display = ''; }
-
-  // 低位异动角标：当日首日异动只数。加首日门后清单本来就短，标"强+中"会常常是 0 或 1，
-  // 反而不如直接给总数，让用户知道今天有几只票刚从低位起第一根。
-  const anItems = ((ANOM || {}).items || []);
-  const anN = anItems.length;
-  const anB = $('#anomBadge');
-  if (anB && anN) { anB.textContent = anN; anB.style.display = ''; }
+  // 页签角标：题材雷达给主推数，低位异动给当日首日异动只数
+  // （加首日门后清单本来就短，标"强+中"会常常是 0 或 1，不如直接给总数）
+  syncBadges();
 
   // URL 支持：?d=2026-11-05 定位交易日，?code=600281 或 #600281 定位个股
   const qc = (location.search.match(/[?&]code=(\d{6})/) || [])[1]
