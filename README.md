@@ -269,10 +269,37 @@ K 线与分时直接复用该股抓到的数据，不额外请求。
 
 跨日对比至少要两个交易日的数据，只有一天时给一句提示并等次日填上。
 
+## 数据源
+
+2026-11-11 起东财 `/api/qt/clist/get`（列表接口）被风控整段封禁：本机与 GitHub Actions
+都取不到，且随后连 `ulist.np/get`、`push2his`（日K/分时）一起被封。为此把取数收口到
+`build/emq.py`，所有模块只调它，不再各自拼 URL。
+
+| 用途 | 首选 | 兜底 |
+|---|---|---|
+| 全市场快照 | 新浪 `Market_Center`（55 页，逐字段与东财一致，含市值/换手） | 东财 clist |
+| 日K | 麦蕊 `hsstock/history/{code}/d/{licence}` | 东财 push2his → 腾讯 |
+| 分时 | 麦蕊 `hsstock/today/{code}/1/{licence}` | 东财 trends2 → 腾讯 |
+| 概念板块行情 | 成分股按流通市值加权自算 | 东财 ulist |
+| 板块指数K线 | 成分股前 15 只合成指数 | 东财 90.BK |
+| 板块成分 | `slist` 反查缓存 `build/members.json` | — |
+
+几点说明：
+
+- **东财仍然排在最前面**。它一旦解封就自动走原路，不需要改代码 —— 留后路而不是一刀切。
+- **麦蕊证书**放 GitHub Secret `MAIRUI_LICENCE`（工作流已注入），本地放 `build/.mairui_key`
+  （已在 `.gitignore`）。没有证书时自动退回腾讯，不报错。
+- 麦蕊日K是**不复权**且**无条数参数**（每次返回全历史，约 650KB），所以只在个股级别用；
+  板块合成指数改用腾讯轻量K线（250 根 ≈ 20KB），否则 700 多个板块会把流量打爆。
+- 板块指数是**合成**的，只用于回撤/分位/20-60 日涨幅这类相对量，绝对点位没有意义。
+- `build/make_members.py` 用 `slist` 反查板块成分，一次约 3200 次请求。**别频繁跑**：
+  30 秒内打 3000+ 次会被东财拉黑，当天就是这么把自己打掉的。成分变动以周计，需要时手动跑。
+
 ## 目录结构
 
 ```
-build/screen.py       抓东财行情 → 筛选 → 写 snap/full
+build/emq.py          统一取数层（新浪全集 / 麦蕊K线分时 / 板块自算），所有模块共用
+build/screen.py       取全市场行情 → 筛选 → 写 snap/full
 build/catalyst.py     催化源清洗：新闻联播 + 韭研公社 → 写 catalyst/<日期>.json
 build/theme_scan.py   题材雷达（低位 + 轮动新颖 + 资讯爆发 + 催化）→ 写 theme/<日期>.json
 build/anomaly.py      低位异动（低位放量 + 与板块背离 + 消息归因 + 持续性）→ 写 anomaly/<日期>.json
@@ -280,6 +307,7 @@ build/anom_track.py   异动名单 T+1~T+5 收益台账 → 写 anomtrack.json
 build/track.py        收益跟踪，生成 track.json
 build/build.py        注入模板生成 index.html
 build/backfill.py     按日期回补历史图表数据
+build/make_members.py 用 slist 反查板块成分 → 写 members.json / boards.json（低频手工跑）
 build/full/<日期>.json      完整明细（含日K与分时，保留最近 60 个交易日）
 build/snap/<日期>.json      轻量名单（长期保留，收益跟踪用）
 build/catalyst/<日期>.json  催化源清洗结果（保留最近 60 个交易日）
