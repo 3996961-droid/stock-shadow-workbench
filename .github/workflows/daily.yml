@@ -22,6 +22,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # 麦蕊智数证书：K线与分时主源（东财 /api/qt/clist 已被风控整段封禁）
+      MAIRUI_LICENCE: ${{ secrets.MAIRUI_LICENCE }}
     steps:
       - name: 检出仓库
         uses: actions/checkout@v4
