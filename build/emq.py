@@ -52,6 +52,24 @@ TX_KLINE = ("https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
             "?param=%s,day,,,%d,%s")
 TX_MIN = "https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=%s"
 
+# 麦蕊智数：按 licence 计费。证书放环境变量 MAIRUI_LICENCE，本地兜底读文件
+# （build/.mairui_key 已在 .gitignore 里，绝不入库）
+MAIRUI = "https://api.mairuiapi.com"
+_LIC = {"v": None}
+
+
+def licence():
+    if _LIC["v"] is None:
+        v = (os.environ.get("MAIRUI_LICENCE") or "").strip()
+        if not v:
+            try:
+                with open(BASE + "/build/.mairui_key", encoding="utf-8") as f:
+                    v = f.read().strip()
+            except Exception:
+                v = ""
+        _LIC["v"] = v
+    return _LIC["v"]
+
 # clist 原生字段（重建时按需裁剪，保证返回结构与东财一致）
 CLIST_FIELDS = ("f12,f13,f14,f2,f3,f6,f8,f10,f15,f16,f17,f18,f20,f21,"
                 "f62,f100,f104,f105,f115,f128,f136")
@@ -88,6 +106,16 @@ def _tx_symbol(secid):
     return ("sh" if m == "1" else "sz") + c
 
 
+def _is_stock(secid):
+    """区分个股与指数：1.000001 是上证指数，0.000001 才是平安银行，不能混。"""
+    m, c = secid.split(".")
+    if m == "1" and c.startswith(("000", "880", "999")):
+        return False
+    if c.startswith(("399", "899")):
+        return False
+    return c.startswith(("60", "68", "00", "30", "43", "83", "87", "92"))
+
+
 def hist_ok():
     """东财历史行情（K线/分时）是否还活着。被封时一次探测就够，别每次空等。"""
     if not _HIS["tried"]:
@@ -100,41 +128,112 @@ def hist_ok():
     return _HIS["ok"]
 
 
+def _bars11(rows):
+    """把 [(日期,开,收,高,低,量,额)] 补成东财 styles 的 11 列。
+
+    麦蕊与腾讯都不直接给涨跌幅/振幅，用前一根收盘现算；换手率需要流通股本，
+    这里留 0 —— 调用方（异动模块）只把它当辅助信号，缺了不影响主判定。
+    """
+    out, prev = [], None
+    for dt, o, c, h, l, v, a in rows:
+        pc = prev if prev else (o or c)
+        chg = (c / pc - 1) * 100 if pc else 0.0
+        amp = (h - l) / pc * 100 if pc else 0.0
+        out.append("%s,%.2f,%.2f,%.2f,%.2f,%.0f,%.0f,%.2f,%.2f,%.2f,%.2f"
+                   % (dt, o, c, h, l, v, a, amp, chg, c - pc, 0.0))
+        prev = c
+    return out
+
+
+def _mairui_kline(code, lmt):
+    """麦蕊全历史日K → 11 列东财风格字符串。麦蕊只给不复权，涨停核查与画图都够用。"""
+    if not licence():
+        return []
+    raw = _j("%s/hsstock/history/%s/d/%s" % (MAIRUI, code, licence()),
+             retry=2, timeout=40)
+    if not isinstance(raw, list) or not raw:
+        return []
+    rows = []
+    for r in raw[-lmt:]:
+        try:
+            rows.append((r["t"], float(r["o"]), float(r["c"]), float(r["h"]),
+                         float(r["l"]), float(r.get("v") or 0), float(r.get("a") or 0)))
+        except Exception:
+            continue
+    return _bars11(rows)
+
+
+def _mairui_trend(code):
+    """麦蕊当日 1 分钟K线 → [时间, 收, 均价, 量, 额]（量额是逐分钟的，均价按累计算）。"""
+    if not licence():
+        return []
+    raw = _j("%s/hsstock/today/%s/1/%s" % (MAIRUI, code, licence()),
+             retry=2, timeout=25)
+    if not isinstance(raw, list) or not raw:
+        return []
+    out, cv, ca = [], 0.0, 0.0
+    for r in raw:
+        try:
+            t = str(r.get("t") or "")
+            price = float(r["c"])
+            v = float(r.get("v") or 0)
+            a = float(r.get("a") or 0)
+        except Exception:
+            continue
+        cv += v
+        ca += a
+        avg = (ca / (cv * 100)) if cv else price
+        out.append([t[11:16], round(price, 2), round(avg, 3), int(v), round(a, 0)])
+    return out
+
+
 def kline_lines(secid, lmt=120, fqt=0):
     """日K，返回东财风格字符串列表 "日期,开,收,高,低,量,额"，调用方无需改解析。
 
-    东财被封时走腾讯：其 qfqday 每行是 [日期, 开, 收, 高, 低, 量(手)]，没有成交额，
-    用 收盘×量×100 估算（只用于图表展示与放量比，不影响涨停核查）。
+    取数顺序：麦蕊（用户指定主源）→ 东财 → 腾讯。板块指数(90.BKxxxx)麦蕊与腾讯
+    都没有，只能靠东财；东财不可用时返回空，由上层降级。
     """
+    mkt, code = secid.split(".")
+    if _is_stock(secid) and licence():
+        ks = _mairui_kline(code, lmt)
+        if ks:
+            return ks
+
     if hist_ok():
         u = ("https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=%s"
-             "&fields1=f1,f2,f3&fields2=f51,f52,f53,f54,f55,f56,f57"
+             "&fields1=f1,f2,f3&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61"
              "&klt=101&fqt=%d&beg=0&end=20500101&lmt=%d" % (secid, fqt, lmt))
         ks = ((_j(u, retry=2, referer="https://quote.eastmoney.com/")
                .get("data") or {}).get("klines") or [])
         if ks:
             return ks
 
+    if not code.isdigit():
+        return []
     sym = _tx_symbol(secid)
     key = "qfqday" if fqt else "day"
     d = _j(TX_KLINE % (sym, lmt, "qfq" if fqt else ""),
            retry=2, referer="https://gu.qq.com/")
     node = ((d.get("data") or {}).get(sym) or {})
     rows = node.get(key) or node.get("qfqday") or node.get("day") or []
-    out = []
+    bars = []
     for r in rows:
         try:
-            dt, o, c, h, l = r[0], float(r[1]), float(r[2]), float(r[3]), float(r[4])
-            v = float(r[5] or 0)
+            bars.append((r[0], float(r[1]), float(r[2]), float(r[3]), float(r[4]),
+                         float(r[5] or 0), float(r[2]) * float(r[5] or 0) * 100))
         except Exception:
             continue
-        out.append("%s,%.2f,%.2f,%.2f,%.2f,%.0f,%.0f"
-                   % (dt, o, c, h, l, v, c * v * 100))
-    return out
+    return _bars11(bars)
 
 
 def trend_rows(secid):
-    """当日分时，返回 ([[时间, 收, 均价, 量, 额]...], 昨收)。东财不可用时走腾讯逐分钟累计差。"""
+    """当日分时，返回 ([[时间, 收, 均价, 量, 额]...], 昨收)。麦蕊→东财→腾讯。"""
+    mkt, code = secid.split(".")
+    if _is_stock(secid) and licence():
+        rows = _mairui_trend(code)
+        if rows:
+            return rows, 0
+
     if hist_ok():
         u = ("https://push2his.eastmoney.com/api/qt/stock/trends2/get?secid=%s"
              "&fields1=f1,f2,f3,f4,f5,f6,f7,f8&fields2=f51,f52,f53,f54,f55,f56,f57,f58"
@@ -190,7 +289,7 @@ def em_ok():
                referer="https://quote.eastmoney.com/")
         _CLIST["ok"] = bool((d.get("data") or {}).get("diff"))
         _CLIST["tried"] = True
-        print("   行情列表源：%s" % ("东财 clist" if _CLIST["ok"] else "东财 ulist + 新浪全集"))
+        print("   行情列表源：%s" % ("东财 clist" if _CLIST["ok"] else "新浪全集 + 本地重算"))
     return _CLIST["ok"]
 
 
@@ -258,8 +357,12 @@ def market():
 
 # ---------------- 2. 按代码批量（ulist） ----------------
 def ulist(secids, fields=CLIST_FIELDS, chunk=100):
-    """按 secid 批量取快照。ulist 对字段不做限制，缺的字段自动省略。"""
-    if not secids:
+    """按 secid 批量取快照。ulist 对字段不做限制，缺的字段自动省略。
+
+    一旦整轮取不到数据就置灰，本次进程不再重试 —— 被限流时反复请求只会更糟，
+    上层会自动改用成员股快照自算（见 _board_from_members）。
+    """
+    if not secids or not _ULIST["ok"]:
         return []
     ids = list(secids)
     # f12 必带：返回顺序不保证与请求一致，靠它回填
@@ -275,6 +378,8 @@ def ulist(secids, fields=CLIST_FIELDS, chunk=100):
     with ThreadPoolExecutor(max_workers=6) as ex:
         for d in ex.map(one, parts):
             out.extend([x for x in d if isinstance(x, dict)])
+    if not out:
+        _ULIST["ok"] = False
     return out
 
 
@@ -333,9 +438,44 @@ def _board_diff(fields, po):
     if not bs:
         print("   !! 缺少板块代码缓存 build/boards.json，板块列表为空")
         return [], 0
-    rows = ulist(["90." + c for c, _ in bs], fields)
+    rows = ulist(["90." + c for c, _ in bs], fields) if _ULIST["ok"] else []
+    if not rows:
+        rows = _board_from_members()
     rows.sort(key=lambda x: -(_num(x.get("f3")) if po == 1 else -_num(x.get("f3"))))
     return rows, len(bs)
+
+
+def _board_from_members():
+    """板块行情自算：用成分股快照按流通市值加权，不依赖任何板块行情接口。
+
+    涨家数/跌家数/领涨股都能算出来；主力净流入(麦蕊与新浪都没有)留 0，
+    题材打分里只影响"资金强度"一项，不影响位置与轮动。
+    """
+    mem = (members_map().get("boards") or {})
+    if not mem:
+        return []
+    q = {r.get("f12"): r for r in market()}
+    out = []
+    for code, name in boards():
+        rs = [q[c] for c in (mem.get(code) or [])
+              if c in q and (q[c].get("f2") or 0) > 0]
+        if not rs:
+            continue
+        wsum = sum((r.get("f21") or r.get("f20") or 0) for r in rs) or len(rs)
+        chg = sum((_num(r.get("f3")) * ((r.get("f21") or r.get("f20") or 0) or 1))
+                  for r in rs) / wsum
+        up = sum(1 for r in rs if _num(r.get("f3")) > 0)
+        down = sum(1 for r in rs if _num(r.get("f3")) < 0)
+        lead = max(rs, key=lambda r: _num(r.get("f3")))
+        out.append({
+            "f12": code, "f14": name, "f3": round(chg, 2),
+            "f2": None, "f62": 0,
+            "f104": up, "f105": down,
+            "f128": lead.get("f14") or "", "f136": round(_num(lead.get("f3")), 2),
+            "f6": sum(_num(r.get("f6")) for r in rs),
+            "f20": sum(_num(r.get("f20")) for r in rs),
+        })
+    return out
 
 
 def _member_diff(fs, fields, po):
