@@ -12,6 +12,8 @@ import json, os, glob, time, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import emq                                     # 统一取数层（东财被封时走麦蕊/腾讯）
 SNAP_DIR = BASE + "/build/snap"
 TRACK = BASE + "/build/track.json"
 CACHE = BASE + "/build/px_cache.json"
@@ -41,11 +43,8 @@ def get(url, retry=3):
 
 def fetch_closes(sid, beg):
     """返回 [[date, close, high, low], ...]"""
-    u = ("https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=%s"
-         "&fields1=f1,f2&fields2=f51,f52,f53,f54,f55&klt=101&fqt=0&beg=%s&end=20500101"
-         % (sid, beg))
     out = []
-    for line in ((get(u).get("data") or {}).get("klines") or []):
+    for line in emq.kline_lines(sid, 400, 0):
         p = line.split(",")
         try:
             out.append([p[0], float(p[2]), float(p[3]), float(p[4])])
