@@ -13,6 +13,9 @@ import json, os, sys, time, glob, urllib.request
 from datetime import datetime, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import emq                                     # 统一取数层（东财列表被封时的重建方案）
+
 # 仓库根目录（build/ 的上一级），云端与本地相同逻辑，避免任何绝对路径
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SNAP_DIR = BASE + "/build/snap"
@@ -53,32 +56,15 @@ def get(url, retry=4, quiet=False):
 
 
 def all_quotes():
-    """分页取全市场快照，返回 (列表, 接口报告的总数)。
+    """全市场快照，返回 (列表, 总数)。
 
-    单页失败不再静默退出：跳过并继续下一页，连续多页拿不到才放弃；
-    真正是否可用由调用方的完整性校验决定。
+    取数交给 build/emq.py 统一处理：东财 clist 可用就用它，被封时自动改走
+    新浪全集 + ulist 批量重建。是否可用由调用方的完整性校验兜底。
     """
-    out, page, total, miss = [], 1, None, 0
-    while page <= 100:
-        d = (get(LIST_URL % page).get("data") or {})
-        diff = d.get("diff") or []
-        if total is None:
-            total = d.get("total") or 0
-        if not diff:
-            miss += 1
-            if miss >= 4:
-                print("   !! 连续 %d 页取不到数据，停止分页" % miss)
-                break
-            page += 1
-            time.sleep(1.2)
-            continue
-        miss = 0
-        out.extend(diff)
-        page += 1
-        if total and len(out) >= total:
-            break
-        time.sleep(0.12)                       # 页间留点间隔，降低被限流概率
-    print("   分页完成：%d 页 · %d 只（接口报告 total=%s）" % (page - 1, len(out), total))
+    out, total = emq.diff_all(
+        "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048",
+        "f12,f13,f14,f2,f3,f6,f8,f15,f16,f17,f18,f20,f21", po=0)
+    print("   分页完成：%d 只（接口报告 total=%s）" % (len(out), total))
     return out, total
 
 
