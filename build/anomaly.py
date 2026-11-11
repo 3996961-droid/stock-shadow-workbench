@@ -39,6 +39,8 @@ from datetime import datetime, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import emq                                     # 统一取数层（东财列表被封时的重建方案）
 OUT_DIR = BASE + "/build/anomaly"
 # 只保留主板（沪 600/601/603/605，深 000/001/002/003），与 screen.py 完全一致
 MAIN_PREFIX = ("600", "601", "603", "605", "000", "001", "002", "003")
@@ -214,28 +216,11 @@ def hget(url, retry=2, timeout=20):
 # ---------------- 1. 行情：异动候选 ----------------
 def quote_top(maxn=P["scanTop"], min_chg=P["minChg"]):
     """涨幅榜降序取前 N 只，涨幅低于门槛即停（降序，后面更小）。"""
-    out, page = [], 1
-    while page <= 6 and len(out) < maxn:
-        u = ("https://push2.eastmoney.com/api/qt/clist/get?po=1&np=1&fltt=2&invt=2&fid=f3"
-             "&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23"
-             "&fields=f12,f13,f14,f2,f3,f6,f8,f10,f20,f21,f62,f100,f115"
-             "&pn=%d&pz=100" % page)
-        d = (jget(u).get("data") or {})
-        df = d.get("diff") or []
-        if not df:
-            break
-        stop = False
-        for x in df:
-            chg = x.get("f3")
-            if not isinstance(chg, (int, float)):
-                continue
-            if chg < min_chg:
-                stop = True
-                break
-            out.append(x)
-        if stop:
-            break
-        page += 1
+    rows, _ = emq.diff_all("m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23",
+                           "f12,f13,f14,f2,f3,f6,f8,f10,f20,f21,f62,f100,f115",
+                           po=1, maxn=maxn)
+    out = [x for x in rows
+           if isinstance(x.get("f3"), (int, float)) and x["f3"] >= min_chg]
     return out[:maxn]
 
 
