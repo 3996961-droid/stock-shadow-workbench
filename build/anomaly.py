@@ -225,10 +225,7 @@ def quote_top(maxn=P["scanTop"], min_chg=P["minChg"]):
 
 
 def stock_kline(code, market, bars=280):
-    u = ("https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=%d.%s&ut=%s"
-         "&fields1=f1,f2&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61"
-         "&klt=101&fqt=1&beg=0&end=20500101&lmt=%d" % (market, code, UT, bars))
-    ks = ((jget(u).get("data") or {}).get("klines") or [])
+    ks = emq.kline_lines("%d.%s" % (market, code), bars, 1)
     rows = []
     for x in ks:
         p = x.split(",")
