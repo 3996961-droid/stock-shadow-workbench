@@ -9,6 +9,9 @@ _site/
 build/data.json
 build/px_cache.json
 
+# 当日K线缓存（按日期分目录，可随时删）
+build/klcache/
+
 # 第三方接口证书，绝不入库
 build/.mairui_key
 
