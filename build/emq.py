@@ -281,6 +281,101 @@ def trend_rows(secid):
     return out, pre
 
 
+_BST = {}
+
+
+def _tx_rows(secid, lmt):
+    """腾讯日K轻量版（只取收盘/高低/量），用于重建板块指数时省流量。"""
+    sym = _tx_symbol(secid)
+    d = _j(TX_KLINE % (sym, lmt, ""), retry=2, referer="https://gu.qq.com/")
+    node = ((d.get("data") or {}).get(sym) or {})
+    rows = node.get("day") or node.get("qfqday") or []
+    out = {}
+    for r in rows:
+        try:
+            out[r[0]] = (float(r[1]), float(r[2]), float(r[3]), float(r[4]), float(r[5] or 0))
+        except Exception:
+            continue
+    return out
+
+
+def board_stats(code, days=250, top=15):
+    """板块指数自建：成分股按流通市值加权合成，代替东财板块K线。
+
+    东财板块指数接口已不可用，但板块的位置（距高点回撤、250日分位）与轮动
+    新颖度必须要有历史序列。取板块内流通市值前 top 只成分股的日K，各自以
+    首日收盘归一后按市值加权，得到一条合成指数 —— 绝对点位没有意义，
+    但回撤、分位、20/60 日涨幅这些相对量是可靠的。
+    """
+    if code in _BST:
+        return _BST[code]
+    mem = (members_map().get("boards") or {}).get(code) or []
+    q = {r.get("f12"): r for r in market()}
+    pool = [c for c in mem if c in q and (q[c].get("f21") or 0) > 0]
+    if len(pool) < 3:
+        _BST[code] = None
+        return None
+    pool.sort(key=lambda c: -(q[c].get("f21") or 0))
+    pool = pool[:top]
+
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        got = list(ex.map(lambda c: (c, _tx_rows(
+            ("1." if c.startswith("6") else "0.") + c, days)), pool))
+
+    all_dates = sorted({d for _, s in got for d in s})
+    if len(all_dates) < 25:
+        _BST[code] = None
+        return None
+    all_dates = all_dates[-days:]
+
+    norm, weights = {}, {}
+    for c, s in got:
+        ds = [d for d in all_dates if d in s]
+        if len(ds) < len(all_dates) * 0.6:      # 停牌太多的票不参与合成
+            continue
+        base = s[ds[0]][1]
+        if not base:
+            continue
+        norm[c] = {d: s[d][1] / base for d in ds}
+        weights[c] = q[c].get("f21") or 1
+
+    if not norm:
+        _BST[code] = None
+        return None
+    wsum = sum(weights.values())
+
+    series, amts = [], []
+    for d in all_dates:
+        num, w = 0.0, 0.0
+        for c, m in norm.items():
+            if d in m:
+                num += m[d] * weights[c]
+                w += weights[c]
+        if not w:
+            continue
+        series.append((d, round(num / w * 1000, 2)))
+        amts.append(0.0)
+    if len(series) < 25:
+        _BST[code] = None
+        return None
+
+    closes = [c for _, c in series]
+    hi, lo, cur = max(closes), min(closes), closes[-1]
+    n = len(closes)
+    res = {
+        "bars": n, "close": round(cur, 2),
+        "dd": round((cur / hi - 1) * 100, 1) if hi else 0.0,
+        "pos": round((cur - lo) / (hi - lo) * 100, 1) if hi > lo else 50.0,
+        "c20": round((cur / closes[-21] - 1) * 100, 1) if n > 21 else 0.0,
+        "c60": round((cur / closes[-61] - 1) * 100, 1) if n > 61 else 0.0,
+        "vol5v20": 0,
+        "s": series[-66:],
+        "synthetic": True,
+    }
+    _BST[code] = res
+    return res
+
+
 def em_ok():
     """东财列表接口是否还活着（进程内只探一次）。"""
     if not _CLIST["tried"]:
