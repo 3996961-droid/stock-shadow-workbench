@@ -732,11 +732,8 @@ def _clist_diff(fs, fields, po, maxn):
 
 def diff_all(fs, fields=CLIST_FIELDS, po=1, maxn=None):
     """替代原来的 clist 分页：返回 (rows, total)，行结构与东财 diff 同构。"""
-    if em_ok():
-        out, total = _clist_diff(fs, fields, po, maxn)
-        if out:
-            return (out[:maxn] if maxn else out), total
-
+    # 东财 clist 已弃用：它经常只回前 100 条却"看似成功"，
+    # 会把完整性闸门骗过去（云端实测 total=5928 只拿到 100 只），比彻底失败更危险。
     if "m:90+t:" in fs:                     # 概念/行业板块
         rows, total = _board_diff(fields, po)
     elif fs.startswith("b:"):               # 板块成分股
