@@ -108,12 +108,9 @@ def secid(r):
 
 def fetch_detail(r):
     sid = secid(r)
-    # 日K：多取一些，覆盖 10 日涨停核查 + 80 根绘图
-    u = ("https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=%s"
-         "&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57"
-         "&klt=101&fqt=0&beg=0&end=20500101&lmt=120" % sid)
+    # 日K：多取一些，覆盖 10 日涨停核查 + 80 根绘图。取数走 emq（麦蕊/东财/腾讯）
     bars = []
-    for line in ((get(u, quiet=True).get("data") or {}).get("klines") or []):
+    for line in emq.kline_lines(sid, 120, 0):
         p = line.split(",")
         try:
             bars.append([p[0], float(p[1]), float(p[3]), float(p[4]), float(p[2]),
@@ -121,19 +118,9 @@ def fetch_detail(r):
         except Exception:
             continue
 
-    u2 = ("https://push2his.eastmoney.com/api/qt/stock/trends2/get?secid=%s"
-          "&fields1=f1,f2,f3,f4,f5,f6,f7,f8&fields2=f51,f52,f53,f54,f55,f56,f57,f58"
-          "&iscr=0&ndays=1" % sid)
-    td = (get(u2, quiet=True).get("data") or {})
-    trend = []
-    for line in (td.get("trends") or []):
-        p = line.split(",")
-        try:
-            trend.append([p[0], float(p[2]), float(p[7]), int(float(p[5])),
-                          round(float(p[6]), 0)])
-        except Exception:
-            continue
-    return bars, trend, td.get("preClose") or 0
+    # 分时：麦蕊 1 分钟K线优先，缺字段时由 emq 内部回退
+    trend, pre = emq.trend_rows(sid)
+    return bars, trend, pre
 
 
 def enrich(r, bars, trend):
