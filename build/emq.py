@@ -44,6 +44,7 @@ SINA = ("https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/"
 # 东财 clist 是否可用，进程内只探一次
 _CLIST = {"tried": False, "ok": True}
 _MARKET = {"rows": None}
+_TODAY = {"d": ""}
 # 东财 K线/分时/批量是否可用，同样只探一次：被封时每次重试都在空等超时
 _HIS = {"tried": False, "ok": True}
 _ULIST = {"tried": False, "ok": True}
@@ -187,14 +188,52 @@ def _mairui_trend(code):
     return out
 
 
-def kline_lines(secid, lmt=120, fqt=0):
+def kline_lines(secid, lmt=120, fqt=0, src="auto"):
     """日K，返回东财风格字符串列表 "日期,开,收,高,低,量,额"，调用方无需改解析。
 
     取数顺序：麦蕊（用户指定主源）→ 东财 → 腾讯。板块指数(90.BKxxxx)麦蕊与腾讯
     都没有，只能靠东财；东财不可用时返回空，由上层降级。
+
+    加一层当日磁盘缓存：麦蕊每次返回全历史（约 650KB，且没有条数参数），
+    早盘筛选与收益跟踪会重复请求同一批票，缓存能把流量砍掉一半以上。
     """
     mkt, code = secid.split(".")
-    if _is_stock(secid) and licence():
+
+    cache = _cache_path(secid, fqt, src)
+    if cache and os.path.exists(cache):
+        try:
+            with open(cache, encoding="utf-8") as f:
+                lines = [x for x in f.read().split("\n") if x]
+            if len(lines) >= max(25, lmt):     # 缓存里的根数不够就重新取，别拿短序列凑合
+                return lines[-lmt:]
+        except Exception:
+            pass
+
+    # 一次多取一些再切：先筛选用 120 根、收益跟踪要 400 根，
+    # 若按调用方的 lmt 缓存，后一次调用会拿到不够用的短序列。
+    lines = _kline_fetch(secid, max(lmt, 800), fqt, src)
+    if cache and lines:
+        try:
+            os.makedirs(os.path.dirname(cache), exist_ok=True)
+            with open(cache, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines))
+        except Exception:
+            pass
+    return lines
+
+
+def _cache_path(secid, fqt, src="auto"):
+    """当日缓存路径；非交易日不复用（避免用昨天的数据顶今天的）。"""
+    if not _TODAY["d"]:
+        _TODAY["d"] = time.strftime("%Y-%m-%d")
+    return "%s/build/klcache/%s/%s-%d-%s.txt" % (BASE, _TODAY["d"],
+                                                  secid.replace(".", "_"), fqt, src)
+
+
+def _kline_fetch(secid, lmt, fqt, src="auto"):
+    mkt, code = secid.split(".")
+    # src="tx"：收益跟踪要一次拉上千只票，麦蕊每次返回全历史（约650KB）太费流量
+    if src != "tx" and _is_stock(secid) and licence():
         ks = _mairui_kline(code, lmt)
         if ks:
             return ks
@@ -282,10 +321,53 @@ def trend_rows(secid):
 
 
 _BST = {}
+_BOARD_CHG = {}          # 当日板块涨跌幅，供 board_stats 增量追加
+_BHIST = {"loaded": False, "d": {}}
+
+
+def _bhist_path():
+    return BASE + "/build/boardhist.json"
+
+
+def bhist_load():
+    """板块指数历史（收盘序列）。落盘后每天只需追加当日涨跌幅，不再拉外部K线。"""
+    if not _BHIST["loaded"]:
+        try:
+            with open(_bhist_path(), encoding="utf-8") as f:
+                _BHIST["d"] = (json.load(f) or {}).get("boards") or {}
+        except Exception:
+            _BHIST["d"] = {}
+        _BHIST["loaded"] = True
+    return _BHIST["d"]
+
+
+def bhist_save(series_map=None):
+    """把本次算出的序列并入历史文件，滚动保留最近 250 天。"""
+    d = bhist_load()
+    for k, v in (series_map or {}).items():
+        d[k] = v[-250:]
+    try:
+        os.makedirs(os.path.dirname(_bhist_path()), exist_ok=True)
+        with open(_bhist_path(), "w", encoding="utf-8") as f:
+            json.dump({"updated": time.strftime("%Y-%m-%d %H:%M"), "boards": d},
+                      f, ensure_ascii=False)
+    except Exception:
+        pass
+
+
+
+_TXROWS = {}
 
 
 def _tx_rows(secid, lmt):
-    """腾讯日K轻量版（只取收盘/高低/量），用于重建板块指数时省流量。"""
+    """腾讯日K轻量版（只取收盘/高低/量），用于重建板块指数时省流量。
+
+    板块之间成分高度重叠，一只票常被十几个板块用到，进程内记忆化能砍掉大半请求
+    —— 之前没有这层缓存，681 个板块 × 15 只成分股直接把腾讯打到限流。
+    """
+    key = (secid, lmt)
+    if key in _TXROWS:
+        return _TXROWS[key]
     sym = _tx_symbol(secid)
     d = _j(TX_KLINE % (sym, lmt, ""), retry=2, referer="https://gu.qq.com/")
     node = ((d.get("data") or {}).get(sym) or {})
@@ -296,19 +378,51 @@ def _tx_rows(secid, lmt):
             out[r[0]] = (float(r[1]), float(r[2]), float(r[3]), float(r[4]), float(r[5] or 0))
         except Exception:
             continue
+    _TXROWS[key] = out
     return out
 
 
-def board_stats(code, days=250, top=15):
-    """板块指数自建：成分股按流通市值加权合成，代替东财板块K线。
+def _bmetrics(series):
+    """由收盘序列算板块位置指标。series: [[日期, 收盘], ...]"""
+    closes = [c for _, c in series]
+    if len(closes) < 25:
+        return None
+    hi, lo, cur = max(closes), min(closes), closes[-1]
+    n = len(closes)
+    return {
+        "bars": n, "close": round(cur, 2),
+        "dd": round((cur / hi - 1) * 100, 1) if hi else 0.0,
+        "pos": round((cur - lo) / (hi - lo) * 100, 1) if hi > lo else 50.0,
+        "c20": round((cur / closes[-21] - 1) * 100, 1) if n > 21 else 0.0,
+        "c60": round((cur / closes[-61] - 1) * 100, 1) if n > 61 else 0.0,
+        "vol5v20": 0,
+        "s": [[d, c] for d, c in series[-66:]],
+    }
 
-    东财板块指数接口已不可用，但板块的位置（距高点回撤、250日分位）与轮动
-    新颖度必须要有历史序列。取板块内流通市值前 top 只成分股的日K，各自以
-    首日收盘归一后按市值加权，得到一条合成指数 —— 绝对点位没有意义，
-    但回撤、分位、20/60 日涨幅这些相对量是可靠的。
+
+def board_stats(code, days=250, top=8):
+    """板块指数：优先用落盘历史 + 当日涨跌幅增量推进，缺历史才重建。
+
+    东财板块指数接口不可用；板块历史又不能天天重算（一次要几千个请求，
+    把腾讯/东财都打成限流）。所以第一次重建后落盘 build/boardhist.json，
+    此后每天只用成分股快照算出当日板块涨跌幅，追加一根K线即可 ——
+    稳态下零外部请求。
     """
     if code in _BST:
         return _BST[code]
+
+    today = time.strftime("%Y-%m-%d")
+    ser = (bhist_load().get(code) or [])
+    if len(ser) >= 60 and ser[-1][0] != today:
+        chg = _BOARD_CHG.get(code)
+        if chg is not None:
+            last = ser[-1][1]
+            ser = ser + [[today, round(last * (1 + chg / 100.0), 2)]]
+            _BHIST["d"][code] = ser[-250:]
+            res = _bmetrics(ser)
+            _BST[code] = res
+            return res
+
     mem = (members_map().get("boards") or {}).get(code) or []
     q = {r.get("f12"): r for r in market()}
     pool = [c for c in mem if c in q and (q[c].get("f21") or 0) > 0]
@@ -322,56 +436,39 @@ def board_stats(code, days=250, top=15):
         got = list(ex.map(lambda c: (c, _tx_rows(
             ("1." if c.startswith("6") else "0.") + c, days)), pool))
 
-    all_dates = sorted({d for _, s in got for d in s})
+    all_dates = sorted({d for _, s2 in got for d in s2})
     if len(all_dates) < 25:
         _BST[code] = None
         return None
     all_dates = all_dates[-days:]
 
     norm, weights = {}, {}
-    for c, s in got:
-        ds = [d for d in all_dates if d in s]
+    for c, s2 in got:
+        ds = [d for d in all_dates if d in s2]
         if len(ds) < len(all_dates) * 0.6:      # 停牌太多的票不参与合成
             continue
-        base = s[ds[0]][1]
+        base = s2[ds[0]][1]
         if not base:
             continue
-        norm[c] = {d: s[d][1] / base for d in ds}
+        norm[c] = {d: s2[d][1] / base for d in ds}
         weights[c] = q[c].get("f21") or 1
 
     if not norm:
         _BST[code] = None
         return None
-    wsum = sum(weights.values())
 
-    series, amts = [], []
+    series = []
     for d in all_dates:
         num, w = 0.0, 0.0
         for c, m in norm.items():
             if d in m:
                 num += m[d] * weights[c]
                 w += weights[c]
-        if not w:
-            continue
-        series.append((d, round(num / w * 1000, 2)))
-        amts.append(0.0)
-    if len(series) < 25:
-        _BST[code] = None
-        return None
-
-    closes = [c for _, c in series]
-    hi, lo, cur = max(closes), min(closes), closes[-1]
-    n = len(closes)
-    res = {
-        "bars": n, "close": round(cur, 2),
-        "dd": round((cur / hi - 1) * 100, 1) if hi else 0.0,
-        "pos": round((cur - lo) / (hi - lo) * 100, 1) if hi > lo else 50.0,
-        "c20": round((cur / closes[-21] - 1) * 100, 1) if n > 21 else 0.0,
-        "c60": round((cur / closes[-61] - 1) * 100, 1) if n > 61 else 0.0,
-        "vol5v20": 0,
-        "s": series[-66:],
-        "synthetic": True,
-    }
+        if w:
+            series.append([d, round(num / w * 1000, 2)])
+    res = _bmetrics(series)
+    if res:
+        _BHIST["d"][code] = series[-250:]
     _BST[code] = res
     return res
 
@@ -529,13 +626,16 @@ def members_map():
 
 
 def _board_diff(fields, po):
+    """板块行情一律自算。
+
+    东财 ulist 已经不可靠（云端只给回前 100 个板块就被限流，题材雷达直接瘫掉），
+    而板块行情完全可以用成分股快照推出来，没必要再赌第三方接口。
+    """
     bs = boards()
     if not bs:
         print("   !! 缺少板块代码缓存 build/boards.json，板块列表为空")
         return [], 0
-    rows = ulist(["90." + c for c, _ in bs], fields) if _ULIST["ok"] else []
-    if not rows:
-        rows = _board_from_members()
+    rows = _board_from_members()
     rows.sort(key=lambda x: -(_num(x.get("f3")) if po == 1 else -_num(x.get("f3"))))
     return rows, len(bs)
 
@@ -562,6 +662,7 @@ def _board_from_members():
         up = sum(1 for r in rs if _num(r.get("f3")) > 0)
         down = sum(1 for r in rs if _num(r.get("f3")) < 0)
         lead = max(rs, key=lambda r: _num(r.get("f3")))
+        _BOARD_CHG[code] = round(chg, 2)
         out.append({
             "f12": code, "f14": name, "f3": round(chg, 2),
             "f2": None, "f62": 0,
