@@ -13,11 +13,13 @@
     已满 5 个交易日的批次会封存（不再请求行情）；未满的天天刷新。
     前复权（fqt=1）取价，避免除权造成假跳空；信号价以 K 线里信号日那一根为准。
 """
-import json, os, glob, io, time, urllib.request
+import json, os, glob, io, sys, time, urllib.request
 from datetime import datetime, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import emq                                     # 统一取数层（东财被封时走麦蕊/腾讯）
 ANOM_DIR = BASE + "/build/anomaly"
 OUT = BASE + "/build/anomtrack.json"
 MAXD = 5
@@ -46,10 +48,7 @@ def mkt_of(code):
 
 
 def kline(secid, beg="0", lmt=400):
-    u = ("https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=%s&ut=%s"
-         "&fields1=f1,f2&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61"
-         "&klt=101&fqt=1&beg=%s&end=20500101&lmt=%d" % (secid, UT, beg, lmt))
-    ks = ((jget(u).get("data") or {}).get("klines") or [])
+    ks = emq.kline_lines(secid, lmt, 1)
     rows = []
     for x in ks:
         p = x.split(",")
