@@ -331,11 +331,8 @@ def stock_charts(code, bars=80):
     """补抓单只股票的日K与当日分时，字段结构与 screen.py 完全一致，
     这样前端可以直接复用同一套绘图函数。"""
     sid = ("1." if code.startswith("6") else "0.") + code
-    u = ("https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=%s"
-         "&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57"
-         "&klt=101&fqt=0&beg=0&end=20500101&lmt=120" % sid)
     daily = []
-    for line in ((jget(u).get("data") or {}).get("klines") or []):
+    for line in emq.kline_lines(sid, 120, 0):
         p = line.split(",")
         try:
             # [日期, 开, 高, 低, 收, 量, 额]
@@ -347,20 +344,11 @@ def stock_charts(code, bars=80):
     if len(daily) < 25:
         return None
 
-    u2 = ("https://push2his.eastmoney.com/api/qt/stock/trends2/get?secid=%s"
-          "&fields1=f1,f2,f3,f4,f5,f6,f7,f8&fields2=f51,f52,f53,f54,f55,f56,f57,f58"
-          "&iscr=0&ndays=1" % sid)
-    td = (jget(u2).get("data") or {})
+    trows, pre = emq.trend_rows(sid)
     trend = []
-    for line in (td.get("trends") or []):
-        p = line.split(",")
-        try:
-            # [时间(HH:MM), 价格, 均价, 量, 额]
-            trend.append([p[0][-5:], round(float(p[2]), 2), round(float(p[7]), 2),
-                          int(float(p[5])), round(float(p[6]), 0)])
-        except Exception:
-            continue
-    pre = td.get("preClose")
+    for r in trows:
+        trend.append([r[0], round(r[1], 2), round(r[2], 2), int(r[3]), round(r[4], 0)])
+    pre = pre or (daily[-2][4] if len(daily) >= 2 else None)
     return {"daily": daily[-bars:], "trend": trend,
             "preClose": round(float(pre), 2) if pre else None,
             "secid": sid, "mkt": "沪市" if code.startswith("6") else "深市"}
