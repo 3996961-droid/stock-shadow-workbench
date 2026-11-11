@@ -14,6 +14,7 @@ build/klcache/
 
 # 第三方接口证书，绝不入库
 build/.mairui_key
+build/.tushare_key
 
 # 本地备份与归档
 build/*.bak*
