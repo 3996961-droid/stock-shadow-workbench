@@ -137,6 +137,10 @@ def is_theme(name):
 
 # ---------------- 2. 板块K线：位置与成立时长 ----------------
 def board_stat(code):
+    # 东财板块指数已不可用，优先用成分股加权重构的合成指数
+    fb = emq.board_stats(code)
+    if fb:
+        return fb
     u = ("https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=90.%s&ut=%s"
          "&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57"
          "&klt=101&fqt=0&beg=0&end=20500101" % (code, UT))
