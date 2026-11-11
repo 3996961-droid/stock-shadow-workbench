@@ -774,6 +774,7 @@ def main():
     os.makedirs(THEME_DIR, exist_ok=True)
     fp = "%s/%s.json" % (THEME_DIR, now.strftime("%Y-%m-%d"))
     json.dump(out, open(fp, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
+    emq.bhist_save()                       # 板块指数历史落盘，供次日增量推进
     print("写入 %s（%.1f KB）· 用时 %.1fs" % (fp, os.path.getsize(fp) / 1024, time.time() - t0))
 
     # 只保留最近 60 个交易日，一份约 100KB，控制仓库体积
