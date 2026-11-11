@@ -25,6 +25,9 @@ jobs:
     env:
       # 麦蕊智数证书：K线与分时主源（东财 /api/qt/clist 已被风控整段封禁）
       MAIRUI_LICENCE: ${{ secrets.MAIRUI_LICENCE }}
+      # Tushare：板块指数（dc_index/dc_daily/dc_member）。麦蕊没有概念指数的行情与K线，
+      # 板块以前靠成分股加权合成，点位是假的；这儿换真指数。
+      TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
     steps:
       - name: 检出仓库
         uses: actions/checkout@v4
@@ -78,7 +81,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A build/full build/snap build/theme build/catalyst build/anomaly build/boards.json build/boardhist.json build/anomtrack.json build/track.json
+          git add -A build/full build/snap build/theme build/catalyst build/anomaly build/boards.json build/boardhist.json build/boardhist_ts.json build/anomtrack.json build/track.json
           if git diff --staged --quiet; then
             echo "数据无变化，跳过提交"
             exit 0
