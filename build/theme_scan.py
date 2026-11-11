@@ -325,6 +325,28 @@ def news_heat(kw, size=60):
 
 # ---------------- 4. 成分股 ----------------
 def fetch_members(code):
+    """板块成分股。
+
+    Tushare dc_member 直接给名单，省掉 slist 每只票反查一次（那是把 IP 打进
+    黑名单的元凶）；行情用全市场快照补齐，主力净流入用 moneyflow 补上——
+    原先自算口径里这一项只能填 0，龙头打分的"资金强度"等于白给。
+    """
+    if emq.ts_ok():
+        codes = set(emq.ts_members(code))
+        if codes:
+            q = {r.get("f12"): r for r in emq.market()}
+            flow = emq.ts_moneyflow()
+            out = []
+            for c in codes:
+                r = q.get(c)
+                if not r:
+                    continue
+                r = dict(r)
+                r["f62"] = flow.get(c, 0)
+                out.append(r)
+            if out:
+                out.sort(key=lambda x: -(x.get("f3") or 0))
+                return out
     out, _ = emq.diff_all("b:%s" % code,
                           "f12,f14,f2,f3,f6,f8,f9,f20,f21,f62,f115", po=1)
     return out
