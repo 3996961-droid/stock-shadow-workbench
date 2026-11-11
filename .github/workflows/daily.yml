@@ -78,7 +78,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A build/full build/snap build/theme build/catalyst build/anomaly build/anomtrack.json build/track.json
+          git add -A build/full build/snap build/theme build/catalyst build/anomaly build/boards.json build/boardhist.json build/anomtrack.json build/track.json
           if git diff --staged --quiet; then
             echo "数据无变化，跳过提交"
             exit 0
