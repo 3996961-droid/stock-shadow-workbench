@@ -32,6 +32,8 @@ from datetime import datetime, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import emq                                     # 统一取数层（东财列表被封时的重建方案）
 OUT_DIR = BASE + "/build/catalyst"
 HIST_DIR = BASE + "/build/catalyst/hist"
 
@@ -115,19 +117,8 @@ def hget(url, retry=3, timeout=25):
 
 def fetch_boards():
     """题材板块清单，用于把文本归因到板块。"""
-    out, page = [], 1
-    while page <= 10:
-        u = ("https://push2.eastmoney.com/api/qt/clist/get?po=1&np=1&fltt=2&invt=2&fid=f3"
-             "&fs=m:90+t:3&fields=f12,f14&pn=%d&pz=100" % page)
-        d = (jget(u).get("data") or {})
-        diff = d.get("diff") or []
-        if not diff:
-            break
-        out.extend(diff)
-        if len(out) >= (d.get("total") or 0):
-            break
-        page += 1
-    return [(b["f12"], b["f14"]) for b in out]
+    rows, _ = emq.diff_all("m:90+t:3", "f12,f14", po=1)
+    return [(b["f12"], b["f14"]) for b in rows if b.get("f12")]
 
 
 # ---------------- 1. 新闻联播 ----------------
