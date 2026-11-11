@@ -356,6 +356,24 @@ def bhist_save(series_map=None):
 
 
 
+_MRS = {}
+
+
+def _mairui_series(code, lmt=120):
+    """麦蕊日K → {日期: (开,收,高,低,量)}，给板块合成兜底用。"""
+    if code in _MRS:
+        return _MRS[code]
+    out = {}
+    for line in kline_lines(("1." if code.startswith("6") else "0.") + code, lmt, 0):
+        p = line.split(",")
+        try:
+            out[p[0]] = (float(p[1]), float(p[2]), float(p[3]), float(p[4]), float(p[5]))
+        except Exception:
+            continue
+    _MRS[code] = out
+    return out
+
+
 _TXROWS = {}
 
 
@@ -435,6 +453,12 @@ def board_stats(code, days=250, top=8):
     with ThreadPoolExecutor(max_workers=6) as ex:
         got = list(ex.map(lambda c: (c, _tx_rows(
             ("1." if c.startswith("6") else "0.") + c, days)), pool))
+
+    if not any(s2 for _, s2 in got):
+        # 轻量源整块不可用（腾讯被限流）：改用麦蕊，只取前 4 只、窗口缩到 120 天
+        sub = pool[:4]
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            got = list(ex.map(lambda c: (c, _mairui_series(c, 120)), sub))
 
     all_dates = sorted({d for _, s2 in got for d in s2})
     if len(all_dates) < 25:
