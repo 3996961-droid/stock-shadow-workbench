@@ -44,7 +44,7 @@ def get(url, retry=3):
 def fetch_closes(sid, beg):
     """返回 [[date, close, high, low], ...]"""
     out = []
-    for line in emq.kline_lines(sid, 400, 0):
+    for line in emq.kline_lines(sid, 400, 0, src="tx"):
         p = line.split(",")
         try:
             out.append([p[0], float(p[2]), float(p[3]), float(p[4])])
