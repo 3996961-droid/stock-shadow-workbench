@@ -320,6 +320,226 @@ def trend_rows(secid):
     return out, pre
 
 
+# ---------------- Tushare：板块指数（真实指数，替代成分股合成） ----------------
+# 麦蕊没有概念指数的行情与K线（只有名单），板块以往靠成分股加权合成，绝对点位无意义。
+# Tushare 的 dc_* 系列给的是真指数：dc_index 当日行情、dc_daily 日线、dc_member 成分股。
+TUSHARE = "http://api.tushare.pro"
+_TS = {"tok": None, "bad": False}
+
+
+def ts_token():
+    if _TS["tok"] is None:
+        v = (os.environ.get("TUSHARE_TOKEN") or "").strip()
+        if not v:
+            try:
+                with open(BASE + "/build/.tushare_key", encoding="utf-8") as f:
+                    v = f.read().strip()
+            except Exception:
+                v = ""
+        _TS["tok"] = v
+    return _TS["tok"]
+
+
+def ts_ok():
+    return bool(ts_token()) and not _TS["bad"]
+
+
+def _f(v, d=0.0):
+    try:
+        return float(v)
+    except Exception:
+        return d
+
+
+def ts_api(name, params=None, fields="", retry=2, timeout=60):
+    """Tushare 通用调用，返回 [{字段: 值}]；失败返回 []。"""
+    tok = ts_token()
+    if not tok or _TS["bad"]:
+        return []
+    body = json.dumps({"api_name": name, "token": tok,
+                       "params": params or {}, "fields": fields}).encode()
+    for i in range(retry):
+        try:
+            r = urllib.request.Request(TUSHARE, data=body, headers={
+                "Content-Type": "application/json", "User-Agent": UA})
+            with urllib.request.urlopen(r, timeout=timeout) as f:
+                d = json.loads(f.read().decode())
+            if d.get("code") != 0:
+                msg = str(d.get("msg") or "")
+                print("   !! tushare %s 失败：%s" % (name, msg))
+                if ("积分" in msg) or ("权限" in msg):
+                    _TS["bad"] = True       # 权限不足只报一次，之后整轮都不再试
+                return []
+            data = d.get("data") or {}
+            return [dict(zip(data.get("fields") or [], it))
+                    for it in (data.get("items") or [])]
+        except Exception:
+            if i < retry - 1:
+                time.sleep(0.8 * (i + 1))
+    return []
+
+
+def _ts_day():
+    return time.strftime("%Y%m%d")
+
+
+def ts_boards(day=None):
+    """概念板块当日行情 → 东财风格 f 字段，上层代码无需改动。
+
+    f12 代码 / f14 名称 / f3 涨幅 / f62 主力净流入(元) / f104 涨家数 /
+    f105 跌家数 / f128 领涨股 / f136 领涨股涨幅。
+    """
+    d = day or _ts_day()
+    rows = ts_api("dc_index", {"trade_date": d, "idx_type": "概念板块"})
+    if not rows:
+        return []
+    flow = {}
+    for r in ts_api("moneyflow_ind_dc", {"trade_date": d}) or []:
+        flow[r.get("ts_code")] = _f(r.get("net_amount"))
+    out = []
+    for r in rows:
+        ts_code = r.get("ts_code") or ""
+        code = ts_code.split(".")[0]
+        if not code.startswith("BK"):
+            continue
+        out.append({
+            "f12": code,
+            "f14": r.get("name") or code,
+            "f3": round(_f(r.get("pct_change")), 2),
+            "f62": round(flow.get(ts_code, 0.0), 0),
+            "f104": int(_f(r.get("up_num"))),
+            "f105": int(_f(r.get("down_num"))),
+            "f128": r.get("leading") or "",
+            "f136": round(_f(r.get("leading_pct")), 2),
+            "f20": _f(r.get("total_mv")),
+            "f8": _f(r.get("turnover_rate")),
+        })
+    out.sort(key=lambda x: -x["f3"])
+    for x in out:
+        _BOARD_CHG[x["f12"]] = x["f3"]
+    return out
+
+
+def ts_members(code, day=None):
+    """板块成分股代码列表（tushare dc_member，替代 slist 逐只反查）。"""
+    d = day or _ts_day()
+    rows = ts_api("dc_member", {"trade_date": d, "ts_code": "%s.DC" % code})
+    return [str(r.get("con_code") or "").split(".")[0] for r in rows
+            if str(r.get("con_code") or "").endswith((".SH", ".SZ", ".BJ"))]
+
+
+_TSFLOW = {"d": "", "m": {}}
+
+
+def ts_moneyflow(day=None):
+    """个股主力净流入 → {代码: 元}。tushare 给的是万元，这里统一换成元。
+
+    全市场一次 5580 行，一天只拉一次；题材逐个深挖时会重复调用，必须缓存。
+    """
+    d = day or _ts_day()
+    if _TSFLOW["d"] == d and _TSFLOW["m"]:
+        return _TSFLOW["m"]
+    out = {}
+    for r in ts_api("moneyflow", {"trade_date": d}, "ts_code,net_mf_amount"):
+        code = str(r.get("ts_code") or "").split(".")[0]
+        if code:
+            out[code] = round(_f(r.get("net_mf_amount")) * 1e4, 0)
+    if out:
+        _TSFLOW["d"], _TSFLOW["m"] = d, out
+    return out
+
+
+_BHTS = {"loaded": False, "d": {}, "end": ""}
+
+
+def _bhts_path():
+    return BASE + "/build/boardhist_ts.json"
+
+
+def _shift_day(d, n):
+    t = time.strptime(d, "%Y%m%d")
+    return time.strftime("%Y%m%d", time.localtime(time.mktime(t) + n * 86400))
+
+
+def _trade_days(start, end):
+    rows = ts_api("trade_cal", {"exchange": "SSE", "start_date": start, "end_date": end})
+    return sorted(str(r["cal_date"]) for r in rows if str(r.get("is_open")) == "1")
+
+
+def ts_board_hist(days=250, day=None):
+    """全板块指数日线 → {代码: [[日期, 收盘, 成交额], ...]}，落盘增量。
+
+    按交易日循环拉（一天一次请求就能拿全部板块），首次约 240 次、80 秒；
+    之后每天只补最新一个交易日。比按板块循环省一个数量级，也不会撞频次限制。
+    """
+    d = day or _ts_day()
+    if not _BHTS["loaded"]:
+        try:
+            with open(_bhts_path(), encoding="utf-8") as f:
+                j = json.load(f) or {}
+            _BHTS["d"] = j.get("boards") or {}
+            _BHTS["end"] = str(j.get("end") or "")
+        except Exception:
+            _BHTS["d"], _BHTS["end"] = {}, ""
+        _BHTS["loaded"] = True
+    if _BHTS["d"] and _BHTS["end"] >= d:
+        return _BHTS["d"]
+
+    if not _BHTS["d"]:
+        cal = _trade_days(_shift_day(d, -420), d)
+    else:
+        cal = [x for x in _trade_days(_BHTS["end"], d) if x > _BHTS["end"]]
+    cal = [x for x in cal if x <= d]
+    if not cal:
+        return _BHTS["d"]
+
+    print("   板块指数历史：补 %d 个交易日（tushare dc_daily）..." % len(cal))
+    for i, dt in enumerate(cal, 1):
+        for r in ts_api("dc_daily", {"trade_date": dt, "idx_type": "概念板块"}):
+            code = (r.get("ts_code") or "").split(".")[0]
+            if not code.startswith("BK"):
+                continue
+            _BHTS["d"].setdefault(code, []).append(
+                ["%s-%s-%s" % (dt[:4], dt[4:6], dt[6:]),          # 统一成东财的日期格式
+                 round(_f(r.get("close")), 2), round(_f(r.get("amount")), 0)])
+        if i % 50 == 0:
+            print("     %d/%d" % (i, len(cal)))
+    for k in list(_BHTS["d"]):
+        _BHTS["d"][k] = _BHTS["d"][k][-days:]
+    _BHTS["end"] = d
+    try:
+        with open(_bhts_path(), "w", encoding="utf-8") as f:
+            json.dump({"updated": time.strftime("%Y-%m-%d %H:%M"),
+                       "end": d, "boards": _BHTS["d"]}, f, ensure_ascii=False)
+    except Exception:
+        pass
+    return _BHTS["d"]
+
+
+def ts_board_stat(code, days=250):
+    """用真实板块指数算位置指标，结构对齐 _bmetrics。"""
+    ser = ts_board_hist(days).get(code) or []
+    if len(ser) < 20:
+        return None
+    closes = [x[1] for x in ser]
+    n = len(closes)
+    cur = closes[-1]
+    hi, lo = max(closes), min(closes)
+    amts = [x[2] for x in ser]
+    a5 = sum(amts[-5:]) / 5 if n >= 5 else 0
+    a20 = sum(amts[-20:]) / 20 if n >= 20 else 0
+    return {
+        "bars": n, "close": round(cur, 2),
+        "dd": round((cur / hi - 1) * 100, 1) if hi else 0.0,
+        "pos": round((cur - lo) / (hi - lo) * 100, 1) if hi > lo else 50.0,
+        "c20": round((cur / closes[-21] - 1) * 100, 1) if n > 21 else 0.0,
+        "c60": round((cur / closes[-61] - 1) * 100, 1) if n > 61 else 0.0,
+        "vol5v20": round(a5 / a20, 2) if a20 else 0,
+        "s": [[x[0], x[1]] for x in ser[-66:]],
+        "src": "tushare",
+    }
+
+
 _BST = {}
 _BOARD_CHG = {}          # 当日板块涨跌幅，供 board_stats 增量追加
 _BHIST = {"loaded": False, "d": {}}
@@ -429,6 +649,14 @@ def board_stats(code, days=250, top=8):
     if code in _BST:
         return _BST[code]
 
+    # 1) Tushare 真实板块指数（主源）：点位是真的，回撤/分位不用再靠合成近似
+    if ts_ok():
+        ts = ts_board_stat(code, days)
+        if ts:
+            _BST[code] = ts
+            return ts
+
+    # 2) 兜底：落盘历史 + 当日涨跌幅增量推进
     today = time.strftime("%Y-%m-%d")
     ser = (bhist_load().get(code) or [])
     if len(ser) >= 60 and ser[-1][0] != today:
@@ -650,18 +878,20 @@ def members_map():
 
 
 def _board_diff(fields, po):
-    """板块行情一律自算。
+    """板块行情：Tushare dc_index 为主，成分股自算兜底。
 
-    东财 ulist 已经不可靠（云端只给回前 100 个板块就被限流，题材雷达直接瘫掉），
-    而板块行情完全可以用成分股快照推出来，没必要再赌第三方接口。
+    dc_index 一次请求就给全市场概念板块，连带涨跌家数、领涨股、换手、总市值，
+    不必再靠成分股快照加权推——那个口径里主力净流入只能填 0。
     """
-    bs = boards()
-    if not bs:
-        print("   !! 缺少板块代码缓存 build/boards.json，板块列表为空")
-        return [], 0
-    rows = _board_from_members()
+    rows = ts_boards() if ts_ok() else []
+    if not rows:
+        bs = boards()
+        if not bs:
+            print("   !! 缺少板块代码缓存 build/boards.json，板块列表为空")
+            return [], 0
+        rows = _board_from_members()
     rows.sort(key=lambda x: -(_num(x.get("f3")) if po == 1 else -_num(x.get("f3"))))
-    return rows, len(bs)
+    return rows, len(rows)
 
 
 def _board_from_members():
