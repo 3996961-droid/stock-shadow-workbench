@@ -8,7 +8,7 @@
 生成 build/track.json：
     cohorts[]  —— 按日期倒序，每批含 rows（逐只 T+n 逐日与累计收益）+ series（等权净值）
 """
-import json, os, glob, time, urllib.request
+import json, os, glob, sys, time, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
