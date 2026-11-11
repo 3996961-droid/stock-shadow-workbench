@@ -23,6 +23,8 @@ from datetime import datetime, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import emq                                     # 统一取数层（东财列表被封时的重建方案）
 THEME_DIR = BASE + "/build/theme"
 
 CN = timezone(timedelta(hours=8))
@@ -123,19 +125,8 @@ def jget_text(url, retry=3, timeout=25):
 
 # ---------------- 1. 概念板块 ----------------
 def fetch_boards():
-    out, page = [], 1
-    while page <= 10:
-        u = ("https://push2.eastmoney.com/api/qt/clist/get?po=1&np=1&fltt=2&invt=2&fid=f3"
-             "&fs=m:90+t:3&fields=f12,f14,f2,f3,f62,f104,f105,f128,f136&pn=%d&pz=100" % page)
-        d = (jget(u).get("data") or {})
-        diff = d.get("diff") or []
-        if not diff:
-            break
-        out.extend(diff)
-        if len(out) >= (d.get("total") or 0):
-            break
-        page += 1
-        time.sleep(0.1)
+    out, _ = emq.diff_all("m:90+t:3",
+                          "f12,f14,f2,f3,f62,f104,f105,f128,f136", po=1)
     print("   概念板块 %d 个" % len(out))
     return out
 
@@ -330,18 +321,8 @@ def news_heat(kw, size=60):
 
 # ---------------- 4. 成分股 ----------------
 def fetch_members(code):
-    out, page = [], 1
-    while page <= 6:
-        u = ("https://push2.eastmoney.com/api/qt/clist/get?po=1&np=1&fltt=2&invt=2&fid=f3"
-             "&fs=b:%s&fields=f12,f14,f2,f3,f6,f8,f9,f20,f21,f62,f115&pn=%d&pz=100" % (code, page))
-        d = (jget(u).get("data") or {})
-        diff = d.get("diff") or []
-        if not diff:
-            break
-        out.extend(diff)
-        if len(out) >= (d.get("total") or 0):
-            break
-        page += 1
+    out, _ = emq.diff_all("b:%s" % code,
+                          "f12,f14,f2,f3,f6,f8,f9,f20,f21,f62,f115", po=1)
     return out
 
 
