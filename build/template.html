@@ -3424,7 +3424,7 @@ function init() {
     badge.addEventListener('click', function () {
       on = !on;
       try { localStorage.setItem('wb-live', on ? '1' : '0'); } catch (e) {}
-      if (on) tick(); else setBadge('实时已关闭', 'off');
+      if (on) tick(true); else setBadge('实时已关闭', 'off');
     });
     document.body.appendChild(badge);
   }
@@ -3478,10 +3478,12 @@ function init() {
 
   /* ---------- 主循环 ---------- */
   var running = false;
-  function tick() {
+  function tick(force) {
     if (!on || running) return;
     if (document.visibilityState === 'hidden') return;     // 标签页在后台就别烧请求
-    if (!inSession()) { setBadge('停盘 · 显示收盘数据', 'off'); return; }
+
+    var live = inSession();
+    if (!force && !live) { setBadge('停盘 · 显示收盘数据', 'off'); return; }
 
     var list = (typeof ACTIVE !== 'undefined' && ACTIVE) ? ACTIVE : [];
     if (!list.length) return;                              // 页面还没渲染出来
@@ -3498,7 +3500,8 @@ function init() {
     pull(codes).then(function (res) {
       Q = res;
       var n = paint();
-      setBadge('实时 ' + ctime() + ' · ' + n + ' 只', 'ok');
+      // 交易时段内是「实时」，收盘后打开页面则只是「同步」——措辞不能混
+      setBadge((live ? '实时 ' : '同步 ') + ctime() + ' · ' + n + ' 只', 'ok');
     })['catch'](function () {
       setBadge('实时不可用 · 显示收盘数据', 'err');
     }).then(function () {
@@ -3512,13 +3515,13 @@ function init() {
     makeBadge();
     if (!on) { setBadge('实时已关闭', 'off'); return; }
     setBadge('实时准备中…', 'off');
-    setTimeout(tick, 2000);
+    setTimeout(function () { tick(true); }, 2000);   // 首次不管时段都拉一次，收盘后打开也能核对
     setInterval(tick, GAP);
     // 页面切到别的交易日时 ACTIVE 会换一个新数组，检测到就立刻重拉，不用等下一个 30 秒
     setInterval(function () {
       if (typeof ACTIVE !== 'undefined' && ACTIVE !== lastRef) {
         lastRef = ACTIVE;
-        tick();
+        tick(true);
       }
     }, 800);
     document.addEventListener('visibilitychange', function () {
