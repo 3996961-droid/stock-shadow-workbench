@@ -3357,5 +3357,181 @@ function init() {
   });
 })();
 </script>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════
+   盘中实时行情 —— 纯前端，不需要云函数、不需要代理、不需要额外部署
+   ───────────────────────────────────────────────────────────────────────
+   腾讯行情接口 qt.gtimg.cn 的响应头带 Access-Control-Allow-Origin: *，
+   所以浏览器可以直接 fetch 它。一次 700 只，全市场七个请求就够。
+   返回体是 GBK 编码的 v_sh600000="1~浦发银行~..."，用 TextDecoder('gbk') 解。
+
+   它只做一件事：把列表里每只股票的涨跌幅换成「今天」的实时涨跌幅。
+   形态（上影/实体）、题材、异动、回撤、分位这些依赖历史日线，盘中算不出来，
+   仍以页面生成时的收盘快照为准 —— 所以这里绝不改动它们。
+
+   任何环节失败都静默降级，页面原有功能一概不受影响。
+   ═══════════════════════════════════════════════════════════════════════ */
+(function () {
+  'use strict';
+
+  var GAP = 30000;          // 刷新间隔（毫秒）
+  var CHUNK = 700;          // 单次批量查询的股票数
+  var API = 'https://qt.gtimg.cn/q=';
+  var on = true, Q = {}, lastRef = null, badge = null;
+
+  /* ---------- 时间：一律按北京时间，与访问者所在时区无关 ---------- */
+  function cn() { return new Date(Date.now() + 8 * 3600000); }
+  function p2(n) { return (n < 10 ? '0' : '') + n; }
+  function cdate() {
+    var d = cn();
+    return d.getUTCFullYear() + '-' + p2(d.getUTCMonth() + 1) + '-' + p2(d.getUTCDate());
+  }
+  function ctime() {
+    var d = cn();
+    return p2(d.getUTCHours()) + ':' + p2(d.getUTCMinutes());
+  }
+  function inSession() {
+    var d = cn(), wd = d.getUTCDay();
+    if (wd === 0 || wd === 6) return false;          // 周末
+    var hm = d.getUTCHours() * 100 + d.getUTCMinutes();
+    return (929 <= hm && hm <= 1132) || (1259 <= hm && hm <= 1505);
+  }
+
+  function sym(c) {
+    if (/^[69]/.test(c)) return 'sh' + c;
+    if (/^[48]/.test(c)) return 'bj' + c;
+    return 'sz' + c;
+  }
+
+  /* ---------- 角标 ---------- */
+  function setBadge(txt, kind) {
+    if (!badge) return;
+    var dot = kind === 'ok' ? '#2ec98a' : (kind === 'err' ? '#e8544d' : '#7b8798');
+    badge.innerHTML = '<span style="display:inline-block;width:6px;height:6px;border-radius:99px;'
+      + 'background:' + dot + ';margin-right:6px;vertical-align:middle"></span>' + txt;
+  }
+  function makeBadge() {
+    badge = document.createElement('div');
+    badge.id = 'liveBadge';
+    badge.style.cssText = 'position:fixed;right:14px;bottom:14px;z-index:99999;'
+      + 'font:11px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;'
+      + 'padding:5px 11px;border-radius:99px;cursor:pointer;user-select:none;'
+      + 'background:rgba(17,21,29,.88);color:#c7d2e5;letter-spacing:.2px;'
+      + 'border:1px solid rgba(120,140,180,.35);backdrop-filter:blur(8px);'
+      + 'box-shadow:0 4px 14px rgba(0,0,0,.25);transition:opacity .15s';
+    badge.title = '盘中每 30 秒刷新一次列表涨跌幅，点击开关';
+    badge.addEventListener('click', function () {
+      on = !on;
+      try { localStorage.setItem('wb-live', on ? '1' : '0'); } catch (e) {}
+      if (on) tick(); else setBadge('实时已关闭', 'off');
+    });
+    document.body.appendChild(badge);
+  }
+
+  /* ---------- 取数 ---------- */
+  function pull(codes) {
+    var groups = [], i;
+    for (i = 0; i < codes.length; i += CHUNK) groups.push(codes.slice(i, i + CHUNK));
+    var out = {};
+    return Promise.all(groups.map(function (g) {
+      var url = API + g.map(sym).join(',');
+      return fetch(url, { cache: 'no-store' })
+        .then(function (r) { return r.arrayBuffer(); })
+        .then(function (buf) {
+          var txt = new TextDecoder('gbk').decode(buf);
+          var segs = txt.split(';');
+          for (var j = 0; j < segs.length; j++) {
+            var s = segs[j], a1 = s.indexOf('"'), a2 = s.indexOf('"', a1 + 1);
+            if (a1 < 0 || a2 < 0) continue;
+            var a = s.slice(a1 + 1, a2).split('~');
+            if (a.length < 45) continue;                 // 停牌/退市的返回位数不足
+            var price = +a[3], pre = +a[4];
+            if (!(price > 0) || !(pre > 0)) continue;
+            out[a[2]] = { price: price, pre: pre, t: a[30] };
+          }
+        });
+    })).then(function () { return out; });
+  }
+
+  /* ---------- 只改列表里的涨跌幅那一格，不动任何结构 ---------- */
+  function paint() {
+    var items = document.querySelectorAll('#list .item'), n = 0;
+    for (var k = 0; k < items.length; k++) {
+      var el = items[k], d = ACTIVE[+el.dataset.i];
+      if (!d) continue;
+      var q = Q[d.code];
+      if (!q) continue;
+      if (d._chg0 === undefined) d._chg0 = d.chg;      // 留一份收盘原值，方便对照
+      if (d._px0 === undefined) d._px0 = d.price;
+      d.chg = Math.round((q.price / q.pre - 1) * 10000) / 100;
+      d.price = q.price;
+      var num = el.querySelector('.num');
+      if (num) {
+        num.textContent = signed(d.chg);
+        num.className = 'num ' + dirCls(d.chg);
+      }
+      n++;
+    }
+    return n;
+  }
+
+  /* ---------- 主循环 ---------- */
+  var running = false;
+  function tick() {
+    if (!on || running) return;
+    if (document.visibilityState === 'hidden') return;     // 标签页在后台就别烧请求
+    if (!inSession()) { setBadge('停盘 · 显示收盘数据', 'off'); return; }
+
+    var list = (typeof ACTIVE !== 'undefined' && ACTIVE) ? ACTIVE : [];
+    if (!list.length) return;                              // 页面还没渲染出来
+
+    var codes = [], seen = {};
+    for (var i = 0; i < list.length; i++) {
+      var c = list[i].code;
+      if (c && !seen[c]) { seen[c] = 1; codes.push(c); }
+    }
+    if (!codes.length) return;
+
+    running = true;
+    setBadge('刷新中…', 'off');
+    pull(codes).then(function (res) {
+      Q = res;
+      var n = paint();
+      setBadge('实时 ' + ctime() + ' · ' + n + ' 只', 'ok');
+    })['catch'](function () {
+      setBadge('实时不可用 · 显示收盘数据', 'err');
+    }).then(function () {
+      running = false;
+    });
+  }
+
+  /* ---------- 启动 ---------- */
+  function start() {
+    try { on = localStorage.getItem('wb-live') !== '0'; } catch (e) {}
+    makeBadge();
+    if (!on) { setBadge('实时已关闭', 'off'); return; }
+    setBadge('实时准备中…', 'off');
+    setTimeout(tick, 2000);
+    setInterval(tick, GAP);
+    // 页面切到别的交易日时 ACTIVE 会换一个新数组，检测到就立刻重拉，不用等下一个 30 秒
+    setInterval(function () {
+      if (typeof ACTIVE !== 'undefined' && ACTIVE !== lastRef) {
+        lastRef = ACTIVE;
+        tick();
+      }
+    }, 800);
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible') setTimeout(tick, 300);
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start);
+  } else {
+    start();
+  }
+})();
+</script>
 </body>
 </html>
