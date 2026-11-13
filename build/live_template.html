@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<title>盘中实时选股 · 长上影形态</title>
+<style>
+:root{
+  --bg:#0a0d13; --panel:#11151d; --panel2:#161b25; --line:#222a39;
+  --text:#e8edf7; --muted:#8a94a8; --dim:#5d6879;
+  --up:#f04a5b; --down:#12b47f; --flat:#8a94a8; --gold:#e8b339; --accent:#4d8dff;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--text); font-size:13px;
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+  -webkit-font-smoothing:antialiased; padding:14px 16px 40px;
+}
+.bar{
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  background:var(--panel); border:1px solid var(--line); border-radius:9px;
+  padding:10px 14px; margin-bottom:14px; position:sticky; top:0; z-index:10;
+  backdrop-filter:blur(10px);
+}
+.dot{width:8px;height:8px;border-radius:99px;background:var(--dim);flex:none}
+.dot.on{background:#2ec98a;box-shadow:0 0 8px #2ec98a}
+.dot.off{background:#e8544d}
+.clock{font-variant-numeric:tabular-nums;font-weight:600;letter-spacing:.4px}
+.stat{color:var(--muted)}
+.sp{flex:1}
+button{
+  background:var(--panel2); color:var(--text); border:1px solid var(--line);
+  border-radius:7px; padding:5px 12px; font-size:12px; cursor:pointer;
+  font-family:inherit;
+}
+button:hover{border-color:var(--accent);color:var(--accent)}
+label{color:var(--muted);font-size:12px;display:flex;align-items:center;gap:5px;cursor:pointer}
+section{margin-bottom:22px}
+h2{
+  font-size:13px;font-weight:600;color:var(--muted);letter-spacing:.5px;
+  margin-bottom:8px;display:flex;align-items:baseline;gap:8px;
+}
+h2 b{color:var(--text);font-size:15px;font-variant-numeric:tabular-nums}
+h2 .hint{font-weight:400;font-size:11px;color:var(--dim)}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th{
+  text-align:right;font-weight:500;font-size:11px;color:var(--dim);
+  padding:5px 8px;border-bottom:1px solid var(--line);white-space:nowrap;
+}
+th:first-child,th:nth-child(2),td:first-child,td:nth-child(2){text-align:left}
+td{padding:6px 8px;border-bottom:1px solid rgba(34,42,57,.5);text-align:right;white-space:nowrap}
+tr:hover td{background:var(--panel2)}
+.code{color:var(--muted);font-size:12px}
+.nm{font-weight:500}
+.up{color:var(--up)} .down{color:var(--down)} .flat{color:var(--flat)}
+.tagbar{display:flex;gap:5px;justify-content:flex-end}
+.tag{
+  font-size:10px;padding:1px 6px;border-radius:4px;background:rgba(77,141,255,.14);
+  color:var(--accent);border:1px solid rgba(77,141,255,.3);
+}
+.tag.hot{background:rgba(240,74,91,.14);color:var(--up);border-color:rgba(240,74,91,.3)}
+.tag.warn{background:rgba(232,179,57,.14);color:var(--gold);border-color:rgba(232,179,57,.3)}
+.empty{color:var(--dim);padding:22px 8px;text-align:center;font-size:12px}
+.final{
+  display:none;background:rgba(46,201,138,.12);border:1px solid rgba(46,201,138,.35);
+  color:#2ec98a;border-radius:7px;padding:5px 11px;font-size:12px;
+}
+.final.on{display:inline-block}
+tr.dim td{opacity:.55}
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <span class="dot" id="dot"></span>
+  <span class="clock" id="clock">--:--:--</span>
+  <span class="stat" id="stat">准备中…</span>
+  <span class="final" id="final">已定版 · 候选已保留</span>
+  <span class="sp"></span>
+  <label><input type="checkbox" id="auto" checked> 自动刷新 30s</label>
+  <button id="btnCsv">导出 CSV</button>
+</div>
+
+<section>
+  <h2>形态候选 <b id="nCand">0</b>
+    <span class="hint" id="crit">收阳 · 上影≥2倍实体 · 前10日无涨停 · 成交额≥3000万</span>
+  </h2>
+  <table id="tCand">
+    <thead><tr>
+      <th>代码</th><th>名称</th><th>现价</th><th>涨跌%</th><th>上影%</th>
+      <th>上影/实体</th><th>实体%</th><th>换手%</th><th>成交额(亿)</th><th>流通(亿)</th>
+    </tr></thead>
+    <tbody></tbody>
+  </table>
+</section>
+
+<section>
+  <h2>盘中异动 <b id="nHot">0</b>
+    <span class="hint" id="crit2">涨超5% · 2分钟爆量≥0.5% · 2分钟拉升≥1.5%</span>
+  </h2>
+  <table id="tHot">
+    <thead><tr>
+      <th>代码</th><th>名称</th><th>现价</th><th>涨跌%</th>
+      <th>2分钟爆量%</th><th>2分钟拉升%</th><th>成交额(亿)</th><th>异动</th>
+    </tr></thead>
+    <tbody></tbody>
+  </table>
+</section>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   盘中实时选股
+   数据：腾讯 qt.gtimg.cn（响应头带 Access-Control-Allow-Origin: *，
+   浏览器可直接跨域取），配一份每天收盘后生成的过滤器 universe。
+   过滤器负责「哪些是主板非 ST」「前 10 日有没有涨停」——这两件事
+   盘中算不出来，但每天只变一次，预生成即可。
+   ═══════════════════════════════════════════════════════════════════ */
+const UNIV = __UNIVERSE__;
+
+const CFG = {
+  gap: 30000,          // 刷新间隔
+  chunk: 500,          // 单批查询只数。实测 600 只（5400 字符）还行，650 只直接连不上，
+                       // 取 500 留余量；3052 只主板固定 7 批
+  shadowK: 2.0,        // 上影 >= 2 倍实体
+  minAmt: 3000e4,      // 当日成交额下限
+  hotPct: 5.0,         // 异动：涨幅门槛
+  burst: 0.5,          // 异动：2 分钟成交额/流通市值 %
+  jump: 1.5,           // 异动：2 分钟拉升 %
+  finalAt: 1445        // 定版时点
+};
+
+const API = 'https://qt.gtimg.cn/q=';
+let CODES = UNIV.codes ? UNIV.codes.split(',') : [];
+let LIMIT = new Uint8Array(0);
+let PREV = null;         // [{price, amt}...] 上一轮快照，用于算 2 分钟差分
+let history = [];        // 最近若干轮，取 2 分钟前那轮做差
+let timer = null, lastRows = { cand: [], hot: [] };
+
+/* 十六进制位图 → 每只股票前 10 日是否涨停 */
+(function () {
+  const hex = UNIV.limit || '';
+  const n = CODES.length;
+  LIMIT = new Uint8Array((n + 7) >> 3);
+  for (let i = 0; i < LIMIT.length; i++) {
+    LIMIT[i] = parseInt(hex.substr(i * 2, 2), 16) || 0;
+  }
+})();
+
+function hasLimit(i) { return (LIMIT[i >> 3] >> (i & 7)) & 1; }
+
+/* ---------- 时间（一律北京时间） ---------- */
+function cn() { return new Date(Date.now() + 8 * 3600000); }
+function p2(n) { return (n < 10 ? '0' : '') + n; }
+function hhmmss() {
+  const d = cn();
+  return p2(d.getUTCHours()) + ':' + p2(d.getUTCMinutes()) + ':' + p2(d.getUTCSeconds());
+}
+function hm() { const d = cn(); return d.getUTCHours() * 100 + d.getUTCMinutes(); }
+function inSession() {
+  const d = cn(), wd = d.getUTCDay();
+  if (wd === 0 || wd === 6) return false;
+  const v = hm();
+  return (929 <= v && v <= 1132) || (1259 <= v && v <= 1505);
+}
+function sym(c) {
+  if (/^[69]/.test(c)) return 'sh' + c;
+  if (/^[48]/.test(c)) return 'bj' + c;
+  return 'sz' + c;
+}
+
+/* ---------- 取数 ---------- */
+function pull(codes) {
+  const groups = [];
+  for (let i = 0; i < codes.length; i += CFG.chunk) groups.push(codes.slice(i, i + CFG.chunk));
+  return Promise.all(groups.map(g =>
+    fetch(API + g.map(sym).join(','), { cache: 'no-store' })
+      .then(r => r.arrayBuffer())
+      .then(buf => {
+        const txt = new TextDecoder('gbk').decode(buf);
+        const out = [];
+        for (const s of txt.split(';')) {
+          const a1 = s.indexOf('"'), a2 = s.indexOf('"', a1 + 1);
+          if (a1 < 0 || a2 < 0) continue;
+          const a = s.slice(a1 + 1, a2).split('~');
+          if (a.length < 45) continue;
+          const price = +a[3], pre = +a[4], open = +a[5], high = +a[33], low = +a[34];
+          if (!(price > 0) || !(pre > 0) || !(open > 0)) continue;
+          out.push({
+            code: a[2], name: a[1], price: price, pre: pre, open: open,
+            high: high, low: low, chg: (price / pre - 1) * 100,
+            amt: (+a[37] || 0) * 1e4, fmcap: (+a[44] || 0) * 1e8,
+            turn: +a[38] || 0, t: a[30]
+          });
+        }
+        return out;
+      })
+  )).then(arrs => arrs.flat());
+}
+
+/* ---------- 判定 ---------- */
+function judge(rows) {
+  const cand = [], hot = [];
+  const idx = {};
+  for (const c of CODES) idx[c] = 0;
+
+  // 位图按下标查，得先建 代码→下标 的映射
+  const pos = Object.create(null);
+  for (let i = 0; i < CODES.length; i++) pos[CODES[i]] = i;
+
+  const now = Date.now();
+  const ref = pickRef(now);          // 2 分钟前那一轮
+
+  for (const q of rows) {
+    // ---- 形态 ----
+    const i = pos[q.code];
+    if (i !== undefined && !hasLimit(i)) {
+      const body = q.price - q.open;
+      const shadow = q.high - q.price;
+      if (body > 0 && shadow > 0 && shadow >= CFG.shadowK * body - 1e-9 && q.amt >= CFG.minAmt) {
+        cand.push({
+          code: q.code, name: q.name, price: q.price,
+          chg: q.chg, amt: q.amt, fmcap: q.fmcap, turn: q.turn,
+          shadowPct: shadow / q.price * 100,
+          bodyPct: body / q.open * 100,
+          ratio: shadow / body
+        });
+      }
+    }
+    // ---- 异动 ----
+    const tags = [];
+    if (q.chg >= CFG.hotPct) tags.push('涨' + q.chg.toFixed(1) + '%');
+    let burst = 0, jump = 0;
+    if (ref && ref[q.code]) {
+      const d = q.amt - ref[q.code].amt;
+      if (d > 0 && q.fmcap > 0) {
+        burst = d / q.fmcap * 100;
+        if (burst >= CFG.burst) tags.push('爆量' + burst.toFixed(2) + '%');
+      }
+      jump = q.chg - ref[q.code].chg;
+      if (jump >= CFG.jump) tags.push('拉升' + jump.toFixed(1) + '%');
+    }
+    if (tags.length) {
+      hot.push({ code: q.code, name: q.name, price: q.price, chg: q.chg,
+                 amt: q.amt, burst: burst, jump: jump, tags: tags });
+    }
+  }
+
+  cand.sort((a, b) => b.shadowPct - a.shadowPct);
+  hot.sort((a, b) => (b.burst - a.burst) || (b.chg - a.chg));
+  return { cand, hot, rows };
+}
+
+function pickRef(now) {
+  // 取 100~150 秒之前最接近的一轮
+  let best = null, bestGap = 1e9;
+  for (const h of history) {
+    const g = (now - h.t) / 1000;
+    if (g >= 100 && g <= 170 && Math.abs(g - 120) < bestGap) {
+      bestGap = Math.abs(g - 120); best = h;
+    }
+  }
+  return best ? best.snap : null;
+}
+
+/* ---------- 渲染 ---------- */
+const fmt = (v, d = 2) => (v == null || isNaN(v)) ? '--' : v.toFixed(d);
+const cls = v => v > 0.0001 ? 'up' : (v < -0.0001 ? 'down' : 'flat');
+
+function renderCand(list) {
+  const tb = document.querySelector('#tCand tbody');
+  document.getElementById('nCand').textContent = list.length;
+  if (!list.length) {
+    tb.innerHTML = '<tr><td colspan="10" class="empty">当前没有符合条件的标的</td></tr>';
+    return;
+  }
+  tb.innerHTML = list.slice(0, 60).map(q => `<tr>
+    <td class="code">${q.code}</td><td class="nm">${q.name}</td>
+    <td>${fmt(q.price)}</td><td class="${cls(q.chg)}">${fmt(q.chg)}</td>
+    <td style="color:var(--gold)">${fmt(q.shadowPct)}</td>
+    <td>${fmt(q.ratio, 1)}</td><td>${fmt(q.bodyPct)}</td>
+    <td style="color:var(--muted)">${fmt(q.turn)}</td>
+    <td style="color:var(--muted)">${fmt(q.amt / 1e8)}</td>
+    <td style="color:var(--muted)">${fmt(q.fmcap / 1e8, 1)}</td>
+  </tr>`).join('') + (list.length > 60
+    ? `<tr><td colspan="10" class="empty">另有 ${list.length - 60} 只未显示，可导出 CSV 查看全部</td></tr>` : '');
+}
+
+function renderHot(list) {
+  const tb = document.querySelector('#tHot tbody');
+  document.getElementById('nHot').textContent = list.length;
+  if (!list.length) {
+    tb.innerHTML = '<tr><td colspan="8" class="empty">暂无异动</td></tr>';
+    return;
+  }
+  tb.innerHTML = list.slice(0, 30).map(q => `<tr>
+    <td class="code">${q.code}</td><td class="nm">${q.name}</td>
+    <td>${fmt(q.price)}</td><td class="${cls(q.chg)}">${fmt(q.chg)}</td>
+    <td>${q.burst ? fmt(q.burst) : '--'}</td>
+    <td>${q.jump ? fmt(q.jump, 1) : '--'}</td>
+    <td style="color:var(--muted)">${fmt(q.amt / 1e8)}</td>
+    <td><div class="tagbar">${q.tags.map(t =>
+      `<span class="tag ${/爆量|拉升/.test(t) ? 'hot' : 'warn'}">${t}</span>`).join('')}</div></td>
+  </tr>`).join('');
+}
+
+/* ---------- 主流程 ---------- */
+let busy = false;
+function tick() {
+  if (busy) return;
+  busy = true;
+  document.getElementById('stat').textContent = '刷新中…';
+  const t0 = Date.now();
+  pull(CODES).then(rows => {
+    const r = judge(rows);
+    lastRows = r;
+    renderCand(r.cand);
+    renderHot(r.hot);
+
+    // 存本轮，供 2 分钟后差分
+    const snap = {};
+    for (const q of rows) snap[q.code] = { amt: q.amt, chg: q.chg };
+    history.push({ t: Date.now(), snap: snap });
+    if (history.length > 8) history.shift();
+
+    const isFinal = hm() >= CFG.finalAt;
+    document.getElementById('final').classList.toggle('on', isFinal);
+    document.getElementById('dot').className = 'dot ' + (isFinal ? 'off' : 'on');
+    document.getElementById('stat').textContent =
+      '覆盖 ' + rows.length + ' 只 · ' + (Date.now() - t0) + 'ms · 基准 ' + UNIV.base;
+  }).catch(e => {
+    document.getElementById('dot').className = 'dot off';
+    document.getElementById('stat').textContent = '取数失败：' + e.message;
+  }).then(() => { busy = false; });
+}
+
+function loop() {
+  if (timer) clearInterval(timer);
+  if (document.getElementById('auto').checked) {
+    timer = setInterval(() => {
+      if (document.visibilityState === 'visible') tick();
+    }, CFG.gap);
+  }
+}
+
+/* ---------- 导出 ---------- */
+function toCsv() {
+  const head = ['代码', '名称', '现价', '涨跌%', '上影%', '上影实体比', '实体%', '换手%', '成交额亿', '流通亿'];
+  const lines = lastRows.cand.map(q => [q.code, q.name, q.price, q.chg.toFixed(2),
+    q.shadowPct.toFixed(2), q.ratio.toFixed(2), q.bodyPct.toFixed(2),
+    q.turn.toFixed(2), (q.amt / 1e8).toFixed(2), (q.fmcap / 1e8).toFixed(1)]);
+  const csv = '\ufeff' + [head].concat(lines).map(r => r.join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  const d = cn();
+  a.download = '盘中形态_' + d.getUTCFullYear() + p2(d.getUTCMonth() + 1) + p2(d.getUTCDate())
+    + '_' + p2(d.getUTCHours()) + p2(d.getUTCMinutes()) + '.csv';
+  a.click();
+}
+
+/* ---------- 启动 ---------- */
+document.getElementById('btnCsv').addEventListener('click', toCsv);
+document.getElementById('auto').addEventListener('change', loop);
+setInterval(() => { document.getElementById('clock').textContent = hhmmss(); }, 1000);
+document.getElementById('clock').textContent = hhmmss();
+
+if (!CODES.length) {
+  document.getElementById('stat').textContent = '过滤器缺失：请先运行 build/gen_universe.py';
+} else if (!inSession()) {
+  document.getElementById('stat').textContent = '非交易时段 · 基准 ' + UNIV.base + ' · 仍拉一次最新快照';
+  tick();
+} else {
+  tick();
+  loop();
+}
+</script>
+</body>
+</html>

@@ -1,9 +1,13 @@
 # 构建产物：每次运行自动生成并直接部署，不进版本库
 index.html
+live.html
 长上影选股工作台.html
 history/
 历史/
 _site/
+
+# 盘中过滤器每天重新生成，不入库；候选名单想留档就单独 add build/live/*.json
+build/live/universe.json
 
 # 中间数据（可由 build/full 最新一日重建）
 build/data.json

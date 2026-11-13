@@ -74,7 +74,11 @@ jobs:
         continue-on-error: true
         run: python3 build/gen_csv.py
 
-      - name: 8/8 生成工作台页面
+      - name: 8/8 生成盘中过滤器（主板非ST + 前10日涨停位图）
+        continue-on-error: true
+        run: python3 build/gen_universe.py
+
+      - name: 9/9 生成工作台页面
         run: python3 build/build.py
 
       - name: 提交每日数据
@@ -101,6 +105,7 @@ jobs:
         run: |
           mkdir -p _site
           cp index.html _site/index.html
+          if [ -f live.html ]; then cp live.html _site/live.html; fi
           if [ -d history ]; then cp -r history _site/history; fi
           echo "发布内容："
           du -sh _site
